@@ -23,22 +23,26 @@ PROV_FAILED_NOT_FOUND = -5
 class UpdateService(dbus.service.Object):
     def __init__(self, bus_name):
         super(UpdateService, self).__init__(bus_name, "/com/lairdtech/security/UpdateService")
+        self.SWU_CONFIG_PATH = '/etc/swupdate.conf'
 
     @dbus.service.method("com.lairdtech.security.UpdateInterface",
                          in_signature='s', out_signature='i')
     def SetConfiguration(self, config):
         try:
-            self.config = json.loads(config)
+            update_config = json.loads(config)
         except Exception, e:
             syslog("Configuration failed, exception = %s" % str(e))
             return -1
+
+        self.process_config(update_config)
+        self.start_swupdate(False)
 
         return 0
 
     @dbus.service.method("com.lairdtech.security.public.UpdateInterface",
                          in_signature='b', out_signature='i')
     def CheckUpdate(self, perform_update):
-        return self.check_for_update(perform_update)
+        return self.check_update(perform_update)
 
     @dbus.service.method("com.lairdtech.security.public.UpdateInterface",
                          in_signature='i', out_signature='i')

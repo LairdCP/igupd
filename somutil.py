@@ -6,6 +6,7 @@ from syslog import syslog, openlog
 from threading import Timer
 
 CMD_FW_PRINTENV = "fw_printenv"
+CMD_FW_SETENV = "fw_setenv"
 CMD_BOOTSIDE = "bootside"
 CMD_REBOOT = "reboot"
 
@@ -62,7 +63,7 @@ def set_env(var, value):
     '''
     Set a u-boot environment variable
     '''
-    out, err = run_proc([CMD_FW_PRINTENV, var, value])
+    out, err = run_proc([CMD_FW_SETENV, var, value])
     if err == 0:
         return True
     else:

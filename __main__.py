@@ -31,9 +31,6 @@ def main():
     try:
         # Create our initial update service object, and run the GLib main loop
         update_service = swupd.SoftwareUpdate(bus_name)
-        interval = random.randint(1,30)
-        gobject.timeout_add(2000, update_service.check_sw_update)
-        gobject.timeout_add(interval*1000, update_service.attempt_update)
         loop.run()
     except KeyboardInterrupt:
         syslog("Received signal, shutting down service.")
