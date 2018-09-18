@@ -58,7 +58,7 @@ class SWUpdateClient(threading.Thread):
         if self.connect_to_prog_sock():
             self.receive_progress_updates()
 
-        if self.proc.poll() == None:)
+        if self.proc.poll() == None:
             self.proc.kill()
 
     def restart_swupdate(self):

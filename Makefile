@@ -1,6 +1,6 @@
 PYTHON ?= /usr/bin/python
 IGUPD_EGG = dist/igupd-1.0-py2.7.egg
-IGUPD_PY_SRCS = __main__.py swupd.py upsvc.py somutil.py resumetimer.py
+IGUPD_PY_SRCS = __main__.py swupd.py upsvc.py somutil.py resumetimer.py swuclient.py bootverify.py
 IGUPD_PY_SETUP = setup.py
 
 all: $(IGUPD_EGG)
