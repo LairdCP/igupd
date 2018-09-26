@@ -16,6 +16,7 @@ SWU_STATUS_FAILURE=4
 SWU_STATUS_DOWNLOAD=5
 SWU_STATUS_DONE=6
 SWU_STATUS_SUBPROCESS=7
+SWU_STATUS_BAD_CMD=8
 
 SWU_PROG_ADDRESS = '/tmp/swupdateprog'
 
@@ -29,7 +30,7 @@ class SWUpdateClient(threading.Thread):
     def connect_to_prog_sock(self):
         timeout = time.time() + 5
         while True:
-            try: 
+            try:
                 if os.path.exists(SWU_PROG_ADDRESS):
                     self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     self.sock.connect(SWU_PROG_ADDRESS)
@@ -37,7 +38,7 @@ class SWUpdateClient(threading.Thread):
                 if time.time() > timeout:
                     return False
             except socket.error, exc:
-                print "Caught exception socket.error : %s" % exc
+                syslog( "Caught exception socket.error : %s" % exc)
 
     def receive_progress_updates(self):
         while True:
@@ -48,7 +49,7 @@ class SWUpdateClient(threading.Thread):
                 fields = struct.unpack('=IiIIII256s64siI2048s', data)
                 self.progress_handler(fields[1],fields[10])
             except socket.error, exc:
-          
+                syslog("Caught exception socket.error: %s" % exc)
         self.sock.close()
 
 
@@ -57,6 +58,12 @@ class SWUpdateClient(threading.Thread):
 
         if self.connect_to_prog_sock():
             self.receive_progress_updates()
+
+        (out, err) = self.proc.communicate()
+
+        if self.proc.returncode != 0:
+            syslog ("command failed, exit-code=%d" % ( self.proc.returncode))
+            self.progress_handler(SWU_STATUS_BAD_CMD,self.proc.returncode)
 
         if self.proc.poll() == None:
             self.proc.kill()
@@ -79,5 +86,3 @@ class SWUpdateClient(threading.Thread):
 
     def set_command(self,cmd):
         self.cmd = cmd
-
-

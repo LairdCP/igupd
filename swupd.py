@@ -12,6 +12,13 @@ from somutil import *
 from bootverify import *
 import resumetimer
 import swuclient
+from usbupd import LocalUpdate
+
+DEVICE_SERVICE_INTERFACE = "com.lairdtech.device.DeviceService"
+DEVICE_SERVICE_OBJ_PATH = "/com/lairdtech/device/DeviceService"
+PUBLIC_API_INTERFACE = "com.lairdtech.device.public.DeviceInterface"
+
+PUBLIC_KEY_PATH = '/rodata/keys/dev.crt'
 
 BLACKLIST='"2 3"'
 UPGRADE_AVAILABLE='upgrade_available'
@@ -58,6 +65,11 @@ class SoftwareUpdate(UpdateService):
         self.reboot_timer = None
         self.snooze_duration = 0
         self.total_snooze_seconds = 0
+        self.usb_local_update = False
+        self.manager = None
+        self.conn_device_service()
+        if self.manager is not None:
+            self.local_update = LocalUpdate(self.process_config, self.start_swupdate, self.manager)
         self.update_state = UPDATE_READY
         self.process_config()
 
@@ -65,6 +77,20 @@ class SoftwareUpdate(UpdateService):
             self.verify_startup()
         else:
             self.start_swupdate(False)
+
+    def conn_device_service(self):
+        """
+        Connects to device service API to indicate update status on led
+        """
+        try:
+
+            bus = dbus.SystemBus()
+            proxy = bus.get_object(DEVICE_SERVICE_INTERFACE, DEVICE_SERVICE_OBJ_PATH)
+            self.manager = dbus.Interface(proxy, PUBLIC_API_INTERFACE)
+
+        except dbus.exceptions.DBusException as e:
+            syslog("swupd: conn_device_service: %s" % e)
+
 
     def verify_startup(self):
         '''
@@ -105,12 +131,26 @@ class SoftwareUpdate(UpdateService):
         track of the state.
         '''
         if status == swuclient.SWU_STATUS_START:
+
+            if self.usb_local_update == True:
+                self.manager.DeviceUpdating()
+
             self.UpdatePending(UPDATE_DOWNLOADING)
             self.update_state = UPDATES_IN_PROGRESS
+
         elif status == swuclient.SWU_STATUS_SUCCESS:
             self.update_available()
+
         elif status == swuclient.SWU_STATUS_FAILURE:
             self.update_state = NO_UPDATE_AVAILABLE
+
+        elif status == swuclient.SWU_STATUS_BAD_CMD:
+
+            if self.usb_local_update == True:
+                self.manager.DeviceUpdateFailed()
+                self.usb_local_update = False
+                self.process_config(None)
+                self.start_swupdate(False)
 
     def process_config(self,config=None):
         '''
@@ -134,6 +174,7 @@ class SoftwareUpdate(UpdateService):
         '''
         Determine the correct boot side for swupdate to copy a new update to and start Swupdate.
         '''
+
         # Check the current boot side so we can make the appropriate switch later
         mode = None
         if self.current_boot_side == 'a':
@@ -147,13 +188,14 @@ class SoftwareUpdate(UpdateService):
         # Check we are using swupdate's suricatta mode or updating locally on the device.
         # If local, don't save the config
         if reply:
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -c ' + result + ' -p ' + str(random.randint(1,30))]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -c ' + result + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
         elif SURICATTA in self.config:
             syslog("CONFIG: SURICATTA MODE")
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -p ' + str(random.randint(1,30))]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
         elif IMAGE in self.config:
             syslog("CONFIG: LOCAL IMAGE")
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-i", self.config[IMAGE]]
+            self.usb_local_update = True
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-i", self.config[IMAGE], "-k", PUBLIC_KEY_PATH]
         else:
             self.update_state = CHECK_ABORTED
             return False
