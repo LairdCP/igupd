@@ -4,7 +4,6 @@ from syslog import syslog, openlog
 from dbus.mainloop.glib import DBusGMainLoop
 import gobject
 import swupd
-import daemon
 import random
 
 # Global loop object
@@ -41,11 +40,8 @@ def main():
     return 0
 
 #
-# Run the main loop in daemon context
+# Run the main loop
 #
-with daemon.DaemonContext(
-    stdout=sys.stdout,
-    stderr=sys.stderr):
-    openlog("IG.UpdateService")
-    syslog("Starting main loop.")
-    main()
+openlog("IG.UpdateService")
+syslog("Starting main loop.")
+main()
