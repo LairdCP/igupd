@@ -9,7 +9,6 @@ import datetime
 from syslog import syslog, openlog
 from upsvc import UpdateService
 from somutil import *
-from bootverify import *
 import resumetimer
 import swuclient
 from usbupd import LocalUpdate
@@ -100,11 +99,7 @@ class SoftwareUpdate(UpdateService):
         if int(get_uboot_env_value(BOOTCOUNT)) > 5:
             self.start_swupdate(True, SWUPDATE_FAILED)
         else:
-            if check_ig_services() and check_wifi_interface():
-                self.start_swupdate(True, SWUPDATE_SUCCESS)
-            else:
-                reboot()
-                return False
+            self.start_swupdate(True, SWUPDATE_SUCCESS)
 
         set_env(UPGRADE_AVAILABLE,'0')
         set_env(BOOTCOUNT,'0')
