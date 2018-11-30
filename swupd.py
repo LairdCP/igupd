@@ -18,7 +18,7 @@ DEVICE_SERVICE_INTERFACE = "com.lairdtech.device.DeviceService"
 DEVICE_SERVICE_OBJ_PATH = "/com/lairdtech/device/DeviceService"
 PUBLIC_API_INTERFACE = "com.lairdtech.device.public.DeviceInterface"
 
-PUBLIC_KEY_PATH = '/rodata/keys/dev.crt'
+PUBLIC_KEY_PATH = '/rodata/secret/igupd/dev.crt'
 
 BLACKLIST='"2 3"'
 UPGRADE_AVAILABLE='upgrade_available'
