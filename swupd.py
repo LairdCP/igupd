@@ -6,6 +6,8 @@ import time
 import random
 import thread
 import datetime
+import dbus.service
+import dbus.exceptions
 from syslog import syslog, openlog
 from upsvc import UpdateService
 from somutil import *
