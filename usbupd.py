@@ -9,7 +9,7 @@ from pyudev.glib import MonitorObserver
 from pyudev import Context, Monitor
 
 
-MOUNT_POINT_PATH = "/media/usb0"
+MOUNT_POINT_PATH = "/media/sda1"
 DEVICE = "sda"
 DEVICE_PART1 = "/dev/sda1"
 UPDATE_PACKAGE_NAME = "swupdate.swu"
