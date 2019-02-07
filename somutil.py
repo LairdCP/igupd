@@ -9,6 +9,8 @@ CMD_FW_PRINTENV = "fw_printenv"
 CMD_FW_SETENV = "fw_setenv"
 CMD_BOOTSIDE = "bootside"
 CMD_REBOOT = "reboot"
+CMD_MD5SUM = "md5sum"
+
 
 def run_proc(cmd, timeout=5):
     '''
@@ -28,6 +30,7 @@ def run_proc(cmd, timeout=5):
 
     return stdout, stderr
 
+
 def run_proc_async(cmd):
     '''
     Same as run_proc, except run asynchronously
@@ -37,6 +40,7 @@ def run_proc_async(cmd):
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     finally:
         proc.kill()
+
 
 def get_uboot_env_value(var):
     '''
@@ -52,12 +56,14 @@ def get_uboot_env_value(var):
     else:
         return None
 
+
 def get_current_side():
     '''
     Return the current bootside
     '''
-    val = get_uboot_env_val(BOOTSIDE)
+    val = get_uboot_env_val(CMD_BOOTSIDE)
     return val
+
 
 def set_env(var, value):
     '''
@@ -68,6 +74,19 @@ def set_env(var, value):
         return True
     else:
         return False
+
+
+def generate_md5sum(partition):
+    '''
+    Handler to generate md5sum for each components
+    '''
+    out, err = run_proc([CMD_MD5SUM, partition], timeout=20)
+    if err and (out is None):
+        return -1
+    else:
+        md5sum, file = out.split()
+        return md5sum
+
 
 def reboot():
     '''

@@ -18,6 +18,9 @@ SWU_STATUS_DONE=6
 SWU_STATUS_SUBPROCESS=7
 SWU_STATUS_BAD_CMD=8
 
+SIGNAL_KILL = -9
+SIGNAL_TERM = -15
+
 SWU_PROG_ADDRESS = '/tmp/swupdateprog'
 
 class SWUpdateClient(threading.Thread):
@@ -28,17 +31,19 @@ class SWUpdateClient(threading.Thread):
         self.cmd = cmd
 
     def connect_to_prog_sock(self):
-        timeout = time.time() + 5
+        timeout = time.time() + 10
         while True:
             try:
                 if os.path.exists(SWU_PROG_ADDRESS):
                     self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     self.sock.connect(SWU_PROG_ADDRESS)
+                    syslog("Socket connection established")
                     return True
                 if time.time() > timeout:
                     return False
             except socket.error, exc:
-                syslog( "Caught exception socket.error : %s" % exc)
+                syslog("Caught exception socket.error.. Retrying: %s" % exc)
+                time.sleep(2)
 
     def receive_progress_updates(self):
         while True:
@@ -47,7 +52,7 @@ class SWUpdateClient(threading.Thread):
                 if not data:
                     break
                 fields = struct.unpack('=IiIIII256s64siI2048s', data)
-                self.progress_handler(fields[1],fields[10])
+                self.progress_handler(fields[1], fields[6], fields[10])
             except socket.error, exc:
                 syslog("Caught exception socket.error: %s" % exc)
         self.sock.close()
@@ -62,14 +67,19 @@ class SWUpdateClient(threading.Thread):
         (out, err) = self.proc.communicate()
 
         if self.proc.returncode != 0:
-            syslog ("command failed, exit-code=%d" % ( self.proc.returncode))
-            self.progress_handler(SWU_STATUS_BAD_CMD,self.proc.returncode)
+            if self.proc.returncode == SIGNAL_TERM:
+                syslog("Subprocess was terminated by SIGTERM %d" % (self.proc.returncode))
+            elif self.proc.returncode == SIGNAL_KILL:
+                syslog("Subprocess was terminated by SIGKILL %d" % (self.proc.returncode))
+            else:
+                syslog("command failed stopping, exit-code=%d" % (self.proc.returncode))
+                self.progress_handler(SWU_STATUS_BAD_CMD, None, self.proc.returncode)
 
-        if self.proc.poll() == None:
+        if self.proc.poll() is None:
             self.proc.kill()
 
     def restart_swupdate(self):
-        if self.proc.poll() == None:
+        if self.proc.poll() is None:
             self.proc.terminate()
 
     def run(self):
@@ -77,9 +87,13 @@ class SWUpdateClient(threading.Thread):
             self.start_swupdate()
             time.sleep(3)
 
-    def progress_handler(self,status,msg):
+    def progress_handler(self, status, curr_image, msg):
         self.state = status
-        self.recv_handler(status,msg)
+        if curr_image:
+            rcurr_img = curr_image.strip('\x00')
+        else:
+            rcurr_img = None
+        self.recv_handler(status, rcurr_img, msg)
 
     def get_state(self):
         return self.state
