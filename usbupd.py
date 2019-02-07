@@ -13,10 +13,10 @@ MOUNT_POINT_PATH = "/media/sda1"
 DEVICE = "sda"
 DEVICE_PART1 = "/dev/sda1"
 UPDATE_PACKAGE_NAME = "swupdate.swu"
-RETRY_COUNT = 5
+RETRY_COUNT = 8
 TIMEOUT = 2000
 
-local_update_config = { "blacklist" : "2 3", "select" : "stable,main", "image" : None, "update_schedule": [{"*" : "0-24"}] }
+local_update_config = { "blacklist" : "0 1 2 3", "select" : "stable,main", "image" : None, "update_schedule": [{"*" : "0-24"}] }
 
 
 class LocalUpdate:
@@ -31,7 +31,6 @@ class LocalUpdate:
         self.job_id = None
         self.start_usb_detection()
         syslog("usbupd: init: Local USB Update is initialized")
-
 
     def check_mount_point(self):
         """
@@ -66,7 +65,6 @@ class LocalUpdate:
                 self.job_id = None
             self.retry_count = 0
 
-
     def device_event(self,observer, device):
         """
         USB Device Event signal
@@ -98,15 +96,15 @@ class LocalUpdate:
 
             self.start_usb_detection()
 
-
     def start_usb_detection(self):
         """
         Starts listening to udev events for usb activity
         """
         try:
-            if os.path.exists(DEVICE_PART1):
-                self.check_mount_point()
-
+            #Remove comments to enable usb local update on boot
+            #if os.path.exists(DEVICE_PART1):
+            #    syslog("start_usb_detection: Mount point exists")
+            #    self.check_mount_point()
             context = Context()
             monitor = Monitor.from_netlink(context)
             monitor.filter_by(subsystem='usb')
