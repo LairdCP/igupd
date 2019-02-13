@@ -115,6 +115,8 @@ class SoftwareUpdate(UpdateService):
                         md5sum_val = generate_md5sum(value[self.current_boot_side])
                     elif key == "rootfs":
                         md5sum_val = generate_md5sum(value[self.current_boot_side])
+                    else:
+                        md5sum_val = generate_md5sum(value)
 
                     if md5sum_val == -1:
                         syslog("igupd:gen_sw_version: Failed for %s  %s" % (key, md5sum_val))
@@ -194,6 +196,8 @@ class SoftwareUpdate(UpdateService):
                     self.usb_local_update = False
                     self.process_config()
                     self.start_swupdate(False)
+                else:
+                    self.start_swupdate(True, SWUPDATE_SUCCESS)
 
         elif status == swuclient.SWU_STATUS_FAILURE:
             self.update_state = NO_UPDATE_AVAILABLE
