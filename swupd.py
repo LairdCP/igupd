@@ -11,6 +11,14 @@ import resumetimer
 import swuclient
 from usbupd import LocalUpdate
 
+DEVICE_NAME = "IG60_"
+
+NM_IFACE = 'org.freedesktop.NetworkManager'
+NM_OBJ = '/org/freedesktop/NetworkManager'
+NM_DEVICE_IFACE = 'org.freedesktop.NetworkManager.Device'
+NM_WIFI_DEVICE_IFACE = 'org.freedesktop.NetworkManager.Device.Wireless'
+DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
+
 DEVICE_SERVICE_INTERFACE = "com.lairdtech.device.DeviceService"
 DEVICE_SERVICE_OBJ_PATH = "/com/lairdtech/device/DeviceService"
 PUBLIC_API_INTERFACE = "com.lairdtech.device.public.DeviceInterface"
@@ -33,7 +41,6 @@ IMAGE = 'image'
 URL = 'url'
 TENANT = 'tenant'
 SELECT = 'select'
-ID = "id"
 
 SW_VERSION_FILE_PATH = '/var/sw-versions'
 kernel_side = {'a': '/dev/ubi0_0', 'b': '/dev/ubi0_3'}
@@ -68,12 +75,14 @@ class SoftwareUpdate(UpdateService):
         self.reboot_start_time = 0
         self.reboot_timer = None
         self.snooze_duration = 0
+        self.device_name = None
         self.total_snooze_seconds = 0
         self.usb_local_update = False
         self.switch_side = False
         self.manager = None
         self.updated_component = set()
         self.gen_sw_version()
+        self.get_wlan_hw_address()
         self.conn_device_service()
         if self.manager is not None:
             self.local_update = LocalUpdate(self.process_config, self.start_swupdate, self.manager)
@@ -84,6 +93,15 @@ class SoftwareUpdate(UpdateService):
             self.verify_startup()
         else:
             self.start_swupdate(False)
+
+    def get_wlan_hw_address(self):
+        bus = dbus.SystemBus()
+        nm = dbus.Interface(bus.get_object(NM_IFACE, NM_OBJ), NM_IFACE)
+        wifi_dev_obj = bus.get_object(NM_IFACE, nm.GetDeviceByIpIface("wlan0"))
+        wifi_dev_props = dbus.Interface(wifi_dev_obj, DBUS_PROP_IFACE)
+        mac_addr = str(wifi_dev_props.Get(NM_WIFI_DEVICE_IFACE, 'HwAddress'))
+        self.device_name = DEVICE_NAME + mac_addr
+        syslog("igupd: get_wlan_hw_address : %s" % self.device_name)
 
     def gen_sw_version(self):
         """
@@ -232,10 +250,10 @@ class SoftwareUpdate(UpdateService):
         # Check we are using swupdate's suricatta mode or updating locally on the device.
         # If local, don't save the config
         if reply:
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -c ' + result + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
         elif SURICATTA in self.config:
             syslog("CONFIG: SURICATTA MODE")
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+ self.config[SURICATTA][ID] + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
         elif IMAGE in self.config:
             syslog("CONFIG: LOCAL IMAGE")
             self.usb_local_update = True
