@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import hashlib
 import re
 from syslog import syslog, openlog
 from threading import Timer
@@ -80,12 +81,11 @@ def generate_md5sum(partition):
     '''
     Handler to generate md5sum for each components
     '''
-    out, err = run_proc([CMD_MD5SUM, partition], timeout=20)
-    if err and (out is None):
-        return -1
-    else:
-        md5sum, file = out.split()
-        return md5sum
+    hash_md5 = hashlib.md5()
+    with open(partition, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
 
 
 def reboot():
