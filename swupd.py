@@ -41,6 +41,8 @@ IMAGE = 'image'
 URL = 'url'
 TENANT = 'tenant'
 SELECT = 'select'
+DEVICE_LED_FAILED = "failed"
+DEVICE_LED_RESET = "reset"
 
 SW_VERSION_FILE_PATH = '/var/sw-versions'
 kernel_side = {'a': '/dev/ubi0_0', 'b': '/dev/ubi0_3'}
@@ -55,11 +57,13 @@ UPDATES_AVAILABLE = 1
 UPDATES_IN_PROGRESS = 2
 CHECK_ABORTED = -1
 
+UPDATE_FAILED = -1
 UPDATE_SNOOZED = 0
 UPDATE_DOWNLOADING = 1
 UPDATE_SCHEDULED = 2
 UPDATE_REBOOT = 3
 UPDATE_READY = 4
+
 MAX_SNOOZE_SECONDS = 7200
 SWUPDATE_SUCCESS = '2'
 SWUPDATE_FAILED = '3'
@@ -79,6 +83,7 @@ class SoftwareUpdate(UpdateService):
         self.total_snooze_seconds = 0
         self.usb_local_update = False
         self.switch_side = False
+        self.data_migrate_success = True
         self.manager = None
         self.updated_component = set()
         self.gen_sw_version()
@@ -189,13 +194,11 @@ class SoftwareUpdate(UpdateService):
                 self.update_available()
                 self.updated_component.clear()
             else:
+                #case when update is skipped
                 self.update_state = NO_UPDATE_AVAILABLE
                 self.updated_component.clear()
                 if self.usb_local_update is True:
-                    self.manager.DeviceUpdateReset()
-                    self.usb_local_update = False
-                    self.process_config()
-                    self.start_swupdate(False)
+                    self.local_update_state_change(DEVICE_LED_RESET)
                 else:
                     self.start_swupdate(True, SWUPDATE_SUCCESS)
 
@@ -205,18 +208,12 @@ class SoftwareUpdate(UpdateService):
             #if swupdate failed in SURICATTA then no need
             #reset config and restart swupdate
             if self.usb_local_update is True:
-                self.manager.DeviceUpdateFailed()
-                self.usb_local_update = False
-                self.process_config()
-                self.start_swupdate(False)
+                self.local_update_state_change(DEVICE_LED_FAILED)
 
         elif status == swuclient.SWU_STATUS_BAD_CMD:
             self.updated_component.clear()
             if self.usb_local_update is True:
-                self.manager.DeviceUpdateFailed()
-                self.usb_local_update = False
-                self.process_config()
-                self.start_swupdate(False)
+                self.local_update_state_change(DEVICE_LED_FAILED)
 
     def process_config(self, config=None):
         '''
@@ -342,15 +339,39 @@ class SoftwareUpdate(UpdateService):
         '''
         Use the IG's reboot command to initiate the reboot
         '''
-        self.UpdatePending(UPDATE_REBOOT)
-        set_env(UPGRADE_AVAILABLE, '1')
-        set_env(BOOTLIMIT, '5')
 
         if self.switch_side:
-            if self.current_boot_side == 'a':
-                set_env(BOOTSIDE, 'b')
-                set_env(ALTBOOTCMD, 'setenv bootside a; saveenv; run bootcmd')
+            self.data_migrate_success = data_migration()
+            if self.data_migrate_success:
+                if self.current_boot_side == 'a':
+                    set_env(BOOTSIDE, 'b')
+                    set_env(ALTBOOTCMD, 'setenv bootside a; saveenv; run bootcmd')
+                else:
+                    set_env(BOOTSIDE, 'a')
+                    set_env(ALTBOOTCMD, 'setenv bootside b; saveenv; run bootcmd')
+
+        if self.data_migrate_success:
+            self.UpdatePending(UPDATE_REBOOT)
+            set_env(UPGRADE_AVAILABLE, '1')
+            set_env(BOOTLIMIT, '5')
+            reboot()
+        else:
+            self.data_migrate_success = True
+            self.switch_side = False
+            self.update_state = NO_UPDATE_AVAILABLE
+            self.UpdatePending(UPDATE_FAILED)
+            self.updated_component.clear()
+            self.reboot_timer = None
+            if self.usb_local_update is True:
+                self.local_update_state_change(DEVICE_LED_FAILED)
             else:
-                set_env(BOOTSIDE, 'a')
-                set_env(ALTBOOTCMD, 'setenv bootside b; saveenv; run bootcmd')
-        reboot()
+                self.start_swupdate(True, SWUPDATE_FAILED)
+
+    def local_update_state_change(self, handler):
+        if handler == DEVICE_LED_RESET:
+            self.manager.DeviceUpdateReset()
+        elif handler == DEVICE_LED_FAILED:
+            self.manager.DeviceUpdateFailed()
+        self.usb_local_update = False
+        self.process_config()
+        self.start_swupdate(False)

@@ -11,7 +11,7 @@ CMD_FW_SETENV = "fw_setenv"
 CMD_BOOTSIDE = "bootside"
 CMD_REBOOT = "reboot"
 CMD_MD5SUM = "md5sum"
-
+CMD_MIGRATE_DATA = "migrate_data.sh"
 
 def run_proc(cmd, timeout=5):
     '''
@@ -75,6 +75,20 @@ def set_env(var, value):
         return True
     else:
         return False
+
+
+def data_migration():
+    '''
+    Handler to migrate data between two sides
+    '''
+    syslog("igupd: data_migration: Starting")
+    out, err = run_proc([CMD_MIGRATE_DATA], timeout=40)
+    if err:
+        syslog("igupd: data_migration: Data migration failed")
+        return False
+    else:
+        syslog("igupd: data_migration: Data migration Completed")
+        return True
 
 
 def generate_md5sum(partition):
