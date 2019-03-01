@@ -41,6 +41,9 @@ IMAGE = 'image'
 URL = 'url'
 TENANT = 'tenant'
 SELECT = 'select'
+POLL_DELAY = 'poll_delay'
+POLL_DELAY_MAX = 'max'
+POLL_DELAY_MIN = 'min'
 DEVICE_LED_FAILED = "failed"
 DEVICE_LED_RESET = "reset"
 
@@ -251,10 +254,10 @@ class SoftwareUpdate(UpdateService):
         # Check we are using swupdate's suricatta mode or updating locally on the device.
         # If local, don't save the config
         if reply:
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
         elif SURICATTA in self.config:
             syslog("CONFIG: SURICATTA MODE")
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -p ' + str(random.randint(1,30)), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
         elif IMAGE in self.config:
             syslog("CONFIG: LOCAL IMAGE")
             self.usb_local_update = True
