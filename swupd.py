@@ -220,23 +220,48 @@ class SoftwareUpdate(UpdateService):
 
     def process_config(self, config=None):
         '''
-        If a config is passed, use it or load from persistent storage
+        If a config is passed, with update_schedule information, then update
+        runtime self.config and write to a persistant memory in /data
+
+        if a config is passed, this can also be a complete config, only for local
+        update seperately
+
+        If a config is not passed, read the configuration from /rodata/
+        and override update_schedule if the file exists in /data/
         '''
-        self.config = config
-        if self.config is None:
+
+        if config is None:
             try:
-                with open(self.SWU_CONFIG_PATH, 'r') as f:
+                with open(self.SWU_CONFIG_DEFAULT_PATH, 'r') as f:
                     self.config = json.load(f)
+
+                #override update_schedule if any exists
+                if os.path.exists(self.SWU_CONFIG_UPDATE_PATH):
+                    with open(self.SWU_CONFIG_UPDATE_PATH, 'r') as f:
+                        temp_config = json.load(f)
+
+                    if 'update_schedule' in temp_config:
+                        self.config["update_schedule"] = temp_config['update_schedule']
+
             except IOError:
                 return False
         else:
-            if SURICATTA in self.config:
-                with open(self.SWU_CONFIG_PATH, 'w') as f:
-                    json.dump(self.config, f, sort_keys=True, indent=2, separators=(',', ': '))
+            # if local update
+            if IMAGE in config:
+                self.config = config
+            #if no local update but schedule info in config
+            elif self.config is not None:
+                if 'update_schedule' in config:
+                    self.config["update_schedule"] = config['update_schedule']
+                    if not os.path.exists(self.SWU_CONFIG_UPDATE_PATH):
+                        os.makedirs(os.path.dirname(self.SWU_CONFIG_UPDATE_PATH))
+                    with open(self.SWU_CONFIG_UPDATE_PATH, 'w+') as f:
+                            json.dump(config, f, sort_keys=True, indent=2, separators=(',', ': '))
+                    syslog("igupd: process_config: update schedule modified successfully")
 
         return True
 
-    def start_swupdate(self, reply=False, result='1' ):
+    def start_swupdate(self, reply=False, result='1'):
         '''
         Determine the correct boot side for swupdate to copy a new update to and start Swupdate.
         '''
@@ -255,6 +280,7 @@ class SoftwareUpdate(UpdateService):
         # If local, don't save the config
         if reply:
             cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
+            syslog("CONFIG: REPLYING TO HAWKBIT")
         elif SURICATTA in self.config:
             syslog("CONFIG: SURICATTA MODE")
             cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
@@ -352,6 +378,7 @@ class SoftwareUpdate(UpdateService):
                 else:
                     set_env(BOOTSIDE, 'a')
                     set_env(ALTBOOTCMD, 'setenv bootside b; saveenv; run bootcmd')
+
 
         if self.data_migrate_success:
             self.UpdatePending(UPDATE_REBOOT)

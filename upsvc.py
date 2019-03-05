@@ -23,7 +23,8 @@ PROV_FAILED_NOT_FOUND = -5
 class UpdateService(dbus.service.Object):
     def __init__(self, bus_name):
         super(UpdateService, self).__init__(bus_name, "/com/lairdtech/security/UpdateService")
-        self.SWU_CONFIG_PATH = '/rodata/public/igupd/swupdate.conf'
+        self.SWU_CONFIG_DEFAULT_PATH = '/rodata/public/igupd/swupdate.conf'
+        self.SWU_CONFIG_UPDATE_PATH = '/data/public/igupd/update_schedule.conf'
 
     @dbus.service.method("com.lairdtech.security.UpdateInterface",
                          in_signature='s', out_signature='i')
@@ -35,8 +36,6 @@ class UpdateService(dbus.service.Object):
             return -1
 
         self.process_config(update_config)
-        self.start_swupdate(False)
-
         return 0
 
     @dbus.service.method("com.lairdtech.security.public.UpdateInterface",
