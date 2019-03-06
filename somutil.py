@@ -12,6 +12,9 @@ CMD_BOOTSIDE = "bootside"
 CMD_REBOOT = "reboot"
 CMD_MD5SUM = "md5sum"
 CMD_MIGRATE_DATA = "migrate_data.sh"
+CMD_STTY = 'stty'
+CMD_OPENSSL = 'openssl'
+SERIAL_DEVICE = '/dev/ttyS0'
 
 def run_proc(cmd, timeout=5):
     '''
@@ -100,6 +103,22 @@ def generate_md5sum(partition):
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
+
+
+def boot_successful(key_path):
+    '''
+    Print successful boot message
+    '''
+    #validate certificate file
+    out, err = run_proc([CMD_OPENSSL ,'x509', '-in', key_path, '-noout'])
+    syslog("igupd: boot_successful: openssl -> out : {} err: {}".format(out, err))
+    if not err:
+        #set the baudrate
+        out, err = run_proc([CMD_STTY, '-F', SERIAL_DEVICE, 'speed', '115200'])
+        syslog("igupd: boot_successful: stty out : {} err: {}".format(out, err))
+        if not err:
+            with open(SERIAL_DEVICE, "w") as f:
+                f.write("Secure Boot Cycle Complete")
 
 
 def reboot():
