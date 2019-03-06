@@ -101,6 +101,7 @@ class SoftwareUpdate(UpdateService):
             self.verify_startup()
         else:
             self.start_swupdate(False)
+        boot_successful(PUBLIC_KEY_PATH)
 
     def get_wlan_hw_address(self):
         bus = dbus.SystemBus()
