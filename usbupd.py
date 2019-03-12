@@ -1,13 +1,18 @@
 '''TO-DO: Implement check if usb is inserted while booting and trigger swupdate depends on if device is reboot from rollback
           or already updated with the package in local usb update'''
 
-import gobject
 import os
 from psutil import disk_partitions
 from syslog import syslog
 from pyudev.glib import MonitorObserver
 from pyudev import Context, Monitor
 
+import sys
+PYTHON3 = sys.version_info >= (3, 0)
+if PYTHON3:
+    from gi.repository import GObject as gobject
+else:
+    import gobject
 
 MOUNT_POINT_PATH = "/media/sda1"
 DEVICE = "sda"

@@ -28,11 +28,17 @@ def run_proc(cmd, timeout=5):
     try:
         my_timer.start()
         stdout, stderr = proc.communicate()
-        syslog(stdout)
+        if stdout:
+            decoded = stdout.decode('utf-8')
+            syslog(decoded)
+        else:
+            decoded = None
+    except Exception as e:
+        syslog("Failed to run proc: '%s'" % str(e))
     finally:
         my_timer.cancel()
 
-    return stdout, stderr
+    return decoded, stderr
 
 
 def run_proc_async(cmd):
@@ -53,12 +59,11 @@ def get_uboot_env_value(var):
     '''
     cmd = [CMD_FW_PRINTENV]
     out, err = run_proc(cmd)
-
-    m = re.search(var+'=([a-zA-Z0-9]*)\n', out)
-    if m:
-        return m.group(1)
-    else:
-        return None
+    if out:
+        m = re.search(var+'=([a-zA-Z0-9]*)\n', out)
+        if m:
+            return m.group(1)
+    return None
 
 
 def get_current_side():

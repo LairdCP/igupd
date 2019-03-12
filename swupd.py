@@ -119,7 +119,7 @@ class SoftwareUpdate(UpdateService):
         if not os.path.isfile(SW_VERSION_FILE_PATH):
             md5sum_val = None
             with open(SW_VERSION_FILE_PATH, 'w') as f:
-                for key, value in components_dict.iteritems():
+                for key, value in components_dict.items():
                     if key == "kernel":
                         md5sum_val = generate_md5sum(value[self.current_boot_side])
                     elif key == "rootfs":
@@ -317,13 +317,15 @@ class SoftwareUpdate(UpdateService):
 
         schedule = []
         for d in update_list:
-            hour_low = int(d.values()[0].split('-')[0])
-            hour_high = int(d.values()[0].split('-')[1])
+            v = list(d.values())
+            k = list(d.keys())
+            hour_low = int(v[0].split('-')[0])
+            hour_high = int(v[0].split('-')[1])
             # '*' is any day
-            if d.keys()[0] == '*':
+            if k[0] == '*':
                 day_target = day
             else:
-                day_target = int(d.keys()[0])
+                day_target = int(k[0])
             # Find the correct day
             if day < day_target: # Days are 0-6
                 days = day_target - day

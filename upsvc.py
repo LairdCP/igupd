@@ -31,7 +31,7 @@ class UpdateService(dbus.service.Object):
     def SetConfiguration(self, config):
         try:
             update_config = json.loads(config)
-        except Exception, e:
+        except Exception as e:
             syslog("Configuration failed, exception = %s" % str(e))
             return -1
 
