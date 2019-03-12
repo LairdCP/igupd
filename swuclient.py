@@ -1,5 +1,4 @@
 import socket
-import sys
 import struct
 import threading
 import random
@@ -7,6 +6,9 @@ import subprocess
 import time
 import os
 from syslog import syslog, openlog
+
+import sys
+PYTHON3 = sys.version_info >= (3, 0)
 
 SWU_STATUS_IDLE=0
 SWU_STATUS_START=1
@@ -25,10 +27,10 @@ SWU_PROG_ADDRESS = '/tmp/swupdateprog'
 
 class SWUpdateClient(threading.Thread):
     def __init__(self,handler,cmd):
-        threading.Thread.__init__(self)
         self.recv_handler = handler
         self.proc = None
         self.cmd = cmd
+        threading.Thread.__init__(self)
 
     def connect_to_prog_sock(self):
         timeout = time.time() + 10
@@ -41,7 +43,7 @@ class SWUpdateClient(threading.Thread):
                     return True
                 if time.time() > timeout:
                     return False
-            except socket.error, exc:
+            except socket.error as exc:
                 syslog("Caught exception socket.error.. Retrying: %s" % exc)
                 time.sleep(2)
 
@@ -52,9 +54,15 @@ class SWUpdateClient(threading.Thread):
                 if not data:
                     break
                 fields = struct.unpack('=IiIIII256s64siI2048s', data)
-                self.progress_handler(fields[1], fields[6], fields[10])
-            except socket.error, exc:
+                if PYTHON3:
+                    self.progress_handler(fields[1], str(fields[6],"utf-8"), str(fields[10],"utf-8"))
+                else:
+                    self.progress_handler(fields[1], fields[6], fields[10])
+            except socket.error as exc:
                 syslog("Caught exception socket.error: %s" % exc)
+            except Exception as e:
+                syslog("Failed to do progress updates: '%s'" % str(e))
+
         self.sock.close()
 
 
@@ -80,7 +88,7 @@ class SWUpdateClient(threading.Thread):
 
     def restart_swupdate(self):
         if self.proc.poll() is None:
-            self.proc.terminate()
+            self.proc.kill()
 
     def run(self):
         while True:

@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 
-import sys
 import argparse
 import dbus, dbus.exceptions, dbus.mainloop.glib
 import threading
-import gobject
 import time
 import unittest
+
+import sys
+PYTHON3 = sys.version_info >= (3, 0)
+if PYTHON3:
+    from gi.repository import GObject as gobject
+else:
+    import gobject
 
 NO_UPDATE_AVAILABLE =    0
 UPDATES_AVAILABLE =      1
