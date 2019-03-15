@@ -47,6 +47,7 @@ POLL_DELAY_MIN = 'min'
 DEVICE_LED_FAILED = "failed"
 DEVICE_LED_RESET = "reset"
 
+SW_CONF_FILE_PATH = '/rodata/public/igupd/swupdate.cfg'
 SW_VERSION_FILE_PATH = '/var/sw-versions'
 kernel_side = {'a': '/dev/ubi0_0', 'b': '/dev/ubi0_3'}
 rootfs_side = {'a': '/dev/ubi0_1', 'b': '/dev/ubi0_4'}
@@ -280,15 +281,15 @@ class SoftwareUpdate(UpdateService):
         # Check we are using swupdate's suricatta mode or updating locally on the device.
         # If local, don't save the config
         if reply:
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", mode, "-u",'-u '+ self.config[SURICATTA][URL] + ' -i '+  self.device_name + ' -c ' + result + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX]))]
             syslog("CONFIG: REPLYING TO HAWKBIT")
         elif SURICATTA in self.config:
             syslog("CONFIG: SURICATTA MODE")
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-u",'-u '+ self.config[SURICATTA][URL] + ' -t ' + self.config[SURICATTA][TENANT] + ' -i '+  self.device_name + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX])), "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", mode, "-u",'-u '+ self.config[SURICATTA][URL] + ' -i '+  self.device_name + ' -p ' + str(random.randint(self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MIN],self.config[SURICATTA][POLL_DELAY][POLL_DELAY_MAX]))]
         elif IMAGE in self.config:
             syslog("CONFIG: LOCAL IMAGE")
             self.usb_local_update = True
-            cmd = [SWUPDATE, "-b", '"'+self.config[BLACKLIST]+'"', "-e", mode, "-l", "5", "-i", self.config[IMAGE], "-k", PUBLIC_KEY_PATH]
+            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", mode, "-i", self.config[IMAGE]]
         else:
             self.update_state = CHECK_ABORTED
             return False
