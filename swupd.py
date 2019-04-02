@@ -53,8 +53,7 @@ kernel_side = {'a': '/dev/ubi0_0', 'b': '/dev/ubi0_3'}
 rootfs_side = {'a': '/dev/ubi0_1', 'b': '/dev/ubi0_4'}
 
 components_dict = {'kernel': kernel_side,
-                   'rootfs': rootfs_side,
-                   'rodata': '/dev/ubi0_6'}
+                   'rootfs': rootfs_side}
 
 NO_UPDATE_AVAILABLE = 0
 UPDATES_AVAILABLE = 1
