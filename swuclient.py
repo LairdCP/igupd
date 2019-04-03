@@ -88,7 +88,7 @@ class SWUpdateClient(threading.Thread):
 
     def restart_swupdate(self):
         if self.proc.poll() is None:
-            self.proc.kill()
+            self.proc.terminate()
 
     def run(self):
         while True:
