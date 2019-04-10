@@ -255,11 +255,12 @@ class SoftwareUpdate(UpdateService):
                 if 'update_schedule' in config:
                     self.config["update_schedule"] = config['update_schedule']
                     if not os.path.exists(self.SWU_CONFIG_UPDATE_PATH):
-                        os.makedirs(os.path.dirname(self.SWU_CONFIG_UPDATE_PATH))
+                        if not os.path.exists(os.path.dirname(self.SWU_CONFIG_UPDATE_PATH)):
+                            os.makedirs(os.path.dirname(self.SWU_CONFIG_UPDATE_PATH))
+
                     with open(self.SWU_CONFIG_UPDATE_PATH, 'w+') as f:
                             json.dump(config, f, sort_keys=True, indent=2, separators=(',', ': '))
                     syslog("igupd: process_config: update schedule modified successfully")
-
         return True
 
     def start_swupdate(self, reply=False, result='1'):
@@ -317,39 +318,48 @@ class SoftwareUpdate(UpdateService):
 
         schedule = []
         for d in update_list:
-            v = list(d.values())
-            k = list(d.keys())
-            hour_low = int(v[0].split('-')[0])
-            hour_high = int(v[0].split('-')[1])
-            # '*' is any day
-            if k[0] == '*':
-                day_target = day
-            else:
-                day_target = int(k[0])
-            # Find the correct day
-            if day < day_target: # Days are 0-6
-                days = day_target - day
-            elif day > day_target: # Day is behind us
-                days = 7 - (day - day_target)
-            else:
-                days = 0 # Schedule reboot today
-            # Find the correct hour
-            if hour < hour_low:
-                hours = hour_low - hour
-            elif hour > hour_high:
-                hours = hour_low
-            else:
-                hours = 0 # Schedule reboot now
+            try:
+                v = list(d.values())
+                k = list(d.keys())
+                hour_low = int(v[0].split('-')[0])
+                hour_high = int(v[0].split('-')[1])
+                # '*' is any day
+                if k[0] == '*':
+                    day_target = day
+                else:
+                    day_target = int(k[0])
+                # Find the correct day
+                if day < day_target: # Days are 0-6
+                    days = day_target - day
+                elif day > day_target: # Day is behind us
+                    days = 7 - (day - day_target)
+                else:
+                    days = 0 # Schedule reboot today
+                # Find the correct hour
+                if hour < hour_low:
+                    hours = hour_low - hour
+                elif hour > hour_high:
+                    hours = hour_low
+                else:
+                    hours = 0 # Schedule reboot now
 
-            run_at = now + datetime.timedelta(hours=hours,days=days)
-            delay = (run_at - now).total_seconds()
-            schedule.append(delay)
-
+                run_at = now + datetime.timedelta(hours=hours,days=days)
+                delay = (run_at - now).total_seconds()
+                schedule.append(delay)
+            except Exception as e:
+                syslog("Exception in update schedule: {}".format(e))
+                del schedule[:]
+                break
         '''
         Start the reboot timer.  The snooze command will use this timer
         to snooze the reboot
         '''
-        syslog("Rebooting in: "+str(min(schedule)))
+        if not schedule:
+            schedule.append(0.0)
+            syslog("Rebooting now...")
+        else:
+            syslog("Rebooting in: "+str(min(schedule)))
+
         self.reboot_timer = resumetimer.ResumableTimer(min(schedule), self.reboot)
         self.reboot_timer.start()
         self.UpdatePending(UPDATE_SCHEDULED)
