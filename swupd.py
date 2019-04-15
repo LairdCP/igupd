@@ -319,15 +319,18 @@ class SoftwareUpdate(UpdateService):
         schedule = []
         for d in update_list:
             try:
+                all_days = False
                 v = list(d.values())
                 k = list(d.keys())
                 hour_low = int(v[0].split('-')[0])
                 hour_high = int(v[0].split('-')[1])
                 # '*' is any day
                 if k[0] == '*':
+                    all_days = True
                     day_target = day
                 else:
                     day_target = int(k[0])
+
                 # Find the correct day
                 if day < day_target: # Days are 0-6
                     days = day_target - day
@@ -335,15 +338,24 @@ class SoftwareUpdate(UpdateService):
                     days = 7 - (day - day_target)
                 else:
                     days = 0 # Schedule reboot today
+
                 # Find the correct hour
-                if hour < hour_low:
+                if hour < hour_low: #schedule window is not missed
                     hours = hour_low - hour
-                elif hour > hour_high:
-                    hours = hour_low
+                elif hour > hour_high: #schedule window is missed
+                    if days == 0 and all_days: #if day is "*" and window missed
+                        hours = (24 - hour) + hour_low
+                        all_days = False
+                    elif days == 0 and (not all_days): #same day window missed
+                        days = 7
+                        hours = (hour_low - hour)
+                    else:
+                        hours = (hour_low - hour)
                 else:
-                    hours = 0 # Schedule reboot now
+                    hours = 0 #Schedule reboot now
 
                 run_at = now + datetime.timedelta(hours=hours,days=days)
+                syslog(" day_target: {} , hour_low: {}, hour_high: {}, run at : {}".format(day_target, hour_low, hour_high,run_at))
                 delay = (run_at - now).total_seconds()
                 schedule.append(delay)
             except Exception as e:
@@ -358,6 +370,7 @@ class SoftwareUpdate(UpdateService):
             schedule.append(0.0)
             syslog("Rebooting now...")
         else:
+            syslog("list is {}".format(schedule))
             syslog("Rebooting in: "+str(min(schedule)))
 
         self.reboot_timer = resumetimer.ResumableTimer(min(schedule), self.reboot)
