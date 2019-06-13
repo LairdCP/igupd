@@ -115,7 +115,10 @@ class SoftwareUpdate(UpdateService):
         """
         Creates sw-versions file for swupdate to check with if-different then install
         """
-        if not os.path.isfile(SW_VERSION_FILE_PATH):
+        if os.path.isfile(SW_VERSION_FILE_PATH):
+            return
+
+        try:
             md5sum_val = None
             with open(SW_VERSION_FILE_PATH, 'w') as f:
                 for key, value in components_dict.items():
@@ -130,6 +133,9 @@ class SoftwareUpdate(UpdateService):
                         syslog("igupd:gen_sw_version: Failed for %s  %s" % (key, md5sum_val))
                     syslog("igupd:gen_sw_version: Writing %s  %s" % (key, md5sum_val))
                     f.write('{}  {}\n'.format(key, md5sum_val))
+        except KeyError:
+            syslog("igupd: find boot side")
+            return 
 
     def conn_device_service(self):
         """
@@ -266,6 +272,7 @@ class SoftwareUpdate(UpdateService):
                         self.config[UPDATE_SCHEDULE] = temp_config[UPDATE_SCHEDULE]
 
                 syslog('Update schedule: {}'.format(self.config[UPDATE_SCHEDULE]))
+
 
             except (RuntimeError, IOError):
                 syslog('Failed to parse secure update configuration file: {}'.format(traceback.format_exc()))
