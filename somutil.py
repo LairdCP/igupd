@@ -115,15 +115,16 @@ def boot_successful(key_path):
     Print successful boot message
     '''
     #validate certificate file
-    out, err = run_proc([CMD_OPENSSL ,'x509', '-in', key_path, '-noout'])
-    syslog("igupd: boot_successful: openssl -> out : {} err: {}".format(out, err))
-    if not err:
-        #set the baudrate
-        out, err = run_proc([CMD_STTY, '-F', SERIAL_DEVICE, 'speed', '115200'])
-        syslog("igupd: boot_successful: stty out : {} err: {}".format(out, err))
+    if key_path:
+        out, err = run_proc([CMD_OPENSSL ,'x509', '-in', key_path, '-noout'])
+        syslog("igupd: boot_successful: openssl -> out : {} err: {}".format(out, err))
         if not err:
-            with open(SERIAL_DEVICE, "w") as f:
-                f.write("Secure Boot Cycle Complete")
+            #set the baudrate
+            out, err = run_proc([CMD_STTY, '-F', SERIAL_DEVICE, 'speed', '115200'])
+            syslog("igupd: boot_successful: stty out : {} err: {}".format(out, err))
+            if not err:
+                with open(SERIAL_DEVICE, "w") as f:
+                    f.write("Secure Boot Cycle Complete")
 
 
 def reboot():
