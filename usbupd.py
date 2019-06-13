@@ -28,8 +28,8 @@ class LocalUpdate:
     """
     Local software update through USB
     """
-    def __init__(self, callback1, callback2, manager):
-        self.manager = manager
+    def __init__(self, callback1, callback2, device_svc):
+        self.device_svc = device_svc
         self.process_config = callback1
         self.start_swupdate = callback2
         self.retry_count = 0
@@ -84,7 +84,8 @@ class LocalUpdate:
             if device.action == "remove":
                 syslog("usbupd: device_event: USB removed")
                 # reset device leds
-                self.manager.DeviceUpdateReset()
+                if self.device_svc:
+                    self.device_svc.DeviceUpdateReset()
                 if self.retry_count != 0:
                     self.retry_count = 0
 

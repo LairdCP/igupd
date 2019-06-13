@@ -4,6 +4,7 @@ from syslog import syslog, openlog
 from dbus.mainloop.glib import DBusGMainLoop
 import swupd
 import random
+import traceback
 
 import sys
 PYTHON3 = sys.version_info >= (3, 0)
@@ -44,7 +45,7 @@ def main():
     except KeyboardInterrupt:
         syslog("Received signal, shutting down service.")
     except Exception as e:
-        syslog("Unexpected exception occurred: '{}'".format(str(e)))
+        syslog("Unexpected exception occurred: '{}'".format(traceback.format_exc()))
     finally:
         loop.quit()
     return 0
