@@ -213,10 +213,10 @@ class SoftwareUpdate(UpdateService):
         elif status == swuclient.SWU_STATUS_FAILURE:
             self.update_state = NO_UPDATE_AVAILABLE
             self.updated_component.clear()
-            #if swupdate failed in SURICATTA then no need
-            #reset config and restart swupdate
             if self.usb_local_update is True:
                 self.local_update_state_change(DEVICE_LED_FAILED)
+            else:
+                self.start_swupdate()
 
         elif status == swuclient.SWU_STATUS_BAD_CMD:
             self.updated_component.clear()
