@@ -95,13 +95,14 @@ class SoftwareUpdate(UpdateService):
         self.device_name_prefix = 'Laird_'
         self.write_cfg_path = '/data/public/igupd/update_schedule.conf'
         self.public_key_file = None
+        self.sslkey = None
         self.process_config()
 
         if get_uboot_env_value(UPGRADE_AVAILABLE) == '1':
             self.verify_startup()
         else:
             self.start_swupdate(False)
-        boot_successful(self.public_key_file)
+        boot_successful(self.public_key_file, self.sslkey)
 
     def get_wlan_hw_address(self):
         bus = dbus.SystemBus()
@@ -248,6 +249,8 @@ class SoftwareUpdate(UpdateService):
                 syslog('Secure update config write path: ' + self.write_cfg_path)
                 if c.exists('globals.public-key-file'):
                     self.public_key_file, is_valid = c.value('globals.public-key-file')
+                if c.exists('suricatta.sslkey'):
+                    self.sslkey, is_valid = c.value('suricatta.sslkey')
                 # Convert update_schedule from cfg format to dict
                 update_schedule = []
                 i = 0
