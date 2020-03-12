@@ -110,7 +110,7 @@ def generate_md5sum(partition):
     return hash_md5.hexdigest()
 
 
-def boot_successful(key_path):
+def boot_successful(key_path, ssl_path):
     '''
     Print successful boot message
     '''
@@ -118,6 +118,10 @@ def boot_successful(key_path):
     if key_path:
         out, err = run_proc([CMD_OPENSSL ,'x509', '-in', key_path, '-noout'])
         syslog("igupd: boot_successful: openssl -> out : {} err: {}".format(out, err))
+        if ssl_path:
+            syslog("igupd: boot_successful: ssl_path")
+            out, err = run_proc([CMD_OPENSSL ,'rsa', '-in', ssl_path, '-check', '-noout'])
+            syslog("igupd: boot_successful: openssl rsa -> out : {} err: {}".format(out, err))
         if not err:
             #set the baudrate
             out, err = run_proc([CMD_STTY, '-F', SERIAL_DEVICE, 'speed', '115200'])
