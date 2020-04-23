@@ -12,6 +12,7 @@ import swuclient
 from usbupd import LocalUpdate
 import pylibconfig
 import traceback
+from schedule import *
 
 NM_IFACE = 'org.freedesktop.NetworkManager'
 NM_OBJ = '/org/freedesktop/NetworkManager'
@@ -30,8 +31,8 @@ ALTBOOTCMD = 'altbootcmd'
 BOOTCOUNT = 'bootcount'
 BOOTLIMIT = 'bootlimit'
 
-PRIORITY_UPDATE_SCHEDULE = 'priority_update_schedule'
 UPDATE_SCHEDULE = 'update_schedule'
+DOWNLOAD_SCHEDULE = 'download_schedule'
 
 ID_CFG_KEY = 'secupdate.id'
 WRITE_CFG_KEY = 'secupdate.write_cfg_path'
@@ -96,6 +97,8 @@ class SoftwareUpdate(UpdateService):
         self.write_cfg_path = '/data/public/igupd/update_schedule.conf'
         self.public_key_file = None
         self.sslkey = None
+        self.download_start_timer = None
+        self.download_end_timer = None
         self.process_config()
 
         if get_uboot_env_value(UPGRADE_AVAILABLE) == '1':
@@ -169,10 +172,7 @@ class SoftwareUpdate(UpdateService):
         Reset the update_available uboot var to '1'.  Set the 'bootcmd' and
         'bootargs' vars to the new setting. Schedule reboot.
         '''
-        if PRIORITY_UPDATE_SCHEDULE in self.config:
-            self.schedule_reboot(self.config[PRIORITY_UPDATE_SCHEDULE])
-        else:
-            self.schedule_reboot(self.config[UPDATE_SCHEDULE])
+        self.schedule_reboot(self.config.get(UPDATE_SCHEDULE))
         self.UpdatePending(UPDATE_SCHEDULED)
         self.update_state = UPDATES_AVAILABLE
 
@@ -264,18 +264,20 @@ class SoftwareUpdate(UpdateService):
                         key = UPDATE_SCHEDULE_CFG_KEY + '.[{}]'.format(i)
                     else:
                         break
-                self.config[UPDATE_SCHEDULE] = update_schedule
+                if check_schedule(update_schedule):
+                    self.config[UPDATE_SCHEDULE] = update_schedule
 
-                #override update_schedule if any exists
-                if os.path.exists(self.write_cfg_path):
-                    with open(self.write_cfg_path, 'r') as f:
-                        temp_config = json.load(f)
+                # Override update_schedule if config file exists
+                update_schedule = load_schedule(self.write_cfg_path, UPDATE_SCHEDULE)
+                if update_schedule:
+                    self.config[UPDATE_SCHEDULE] = update_schedule
+                    syslog('Update schedule: {}'.format(self.config[UPDATE_SCHEDULE]))
 
-                    if UPDATE_SCHEDULE in temp_config:
-                        self.config[UPDATE_SCHEDULE] = temp_config[UPDATE_SCHEDULE]
-
-                syslog('Update schedule: {}'.format(self.config[UPDATE_SCHEDULE]))
-
+                # Load download_schedule from config file
+                download_schedule = load_schedule(self.write_cfg_path, DOWNLOAD_SCHEDULE)
+                if download_schedule:
+                    self.config[DOWNLOAD_SCHEDULE] = download_schedule
+                    syslog('Download schedule: {}'.format(self.config[DOWNLOAD_SCHEDULE]))
 
             except (RuntimeError, IOError):
                 syslog('Failed to parse secure update configuration file: {}'.format(traceback.format_exc()))
@@ -286,15 +288,24 @@ class SoftwareUpdate(UpdateService):
                 self.config = config
             #if no local update but schedule info in config
             elif self.config is not None:
-                if UPDATE_SCHEDULE in config:
-                    self.config[UPDATE_SCHEDULE] = config[UPDATE_SCHEDULE]
-                    if not os.path.exists(self.write_cfg_path):
-                        if not os.path.exists(os.path.dirname(self.write_cfg_path)):
-                            os.makedirs(os.path.dirname(self.write_cfg_path))
-
-                    with open(self.write_cfg_path, 'w+') as f:
-                            json.dump(config, f, sort_keys=True, indent=2, separators=(',', ': '))
-                    syslog("igupd: process_config: update schedule modified successfully")
+                ret = False
+                try:
+                    if check_schedule(config.get(UPDATE_SCHEDULE)):
+                        self.config[UPDATE_SCHEDULE] = config[UPDATE_SCHEDULE]
+                        save_schedule(self.write_cfg_path, UPDATE_SCHEDULE, self.config[UPDATE_SCHEDULE])
+                        syslog('igupd: process_config: update schedule modified successfully: {}'.format(self.config[UPDATE_SCHEDULE]))
+                        ret = True
+                    if check_schedule(config.get(DOWNLOAD_SCHEDULE)):
+                        self.config[DOWNLOAD_SCHEDULE] = config[DOWNLOAD_SCHEDULE]
+                        save_schedule(self.write_cfg_path, DOWNLOAD_SCHEDULE, self.config[DOWNLOAD_SCHEDULE])
+                        syslog('igupd: process_config: download schedule modified successfully: {}'.format(self.config[DOWNLOAD_SCHEDULE]))
+                        # Restart download window
+                        now = datetime.datetime.now()
+                        self.schedule_download_window(now)
+                        ret = True
+                    return ret
+                except (TypeError, AttributeError, ValueError):
+                    return False
         return True
 
     def start_swupdate(self, reply=False, result='1'):
@@ -314,7 +325,7 @@ class SoftwareUpdate(UpdateService):
         # Check we are using swupdate's suricatta mode or updating locally on the device.
         # If local, don't save the config
         if reply:
-            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", select, "-u", ' -i '+  self.device_name + ' -c ' + result]
+            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", select, "-u", '-i '+  self.device_name + ' -c ' + result]
             syslog("CONFIG: REPLYING TO HAWKBIT")
         elif IMAGE in self.config:
             syslog("CONFIG: LOCAL IMAGE")
@@ -322,7 +333,7 @@ class SoftwareUpdate(UpdateService):
             cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", select, "-i", self.config[IMAGE]]
         else:
             syslog("CONFIG: SURICATTA MODE")
-            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", select, "-u", ' -i '+  self.device_name]
+            cmd = [SWUPDATE, "-f", SW_CONF_FILE_PATH, "-e", select, "-u", '-i '+  self.device_name]
 
         # If we've already started the swupdate thread, pass in the new command and
         # and restart swupdate.
@@ -332,78 +343,25 @@ class SoftwareUpdate(UpdateService):
         else:
             self.swupdate_client.set_command(cmd)
             self.swupdate_client.restart_swupdate()
-
+        if not self.usb_local_update:
+            now = datetime.datetime.now()
+            self.schedule_download_window(now)
         return True
 
 
     def schedule_reboot(self, update_list):
         '''
-        Parse the update schedule from the config.  Determine the next
-        update and find the amount of time until the update.  Finally,
-        schedule the update
+        Parse the update schedule to determine the delta of seconds
+        until the next update window.
         '''
         now = datetime.datetime.now()
-        day = datetime.datetime.today().weekday()
-        hour = datetime.datetime.today().hour
-
-        schedule = []
-        for d in update_list:
-            try:
-                all_days = False
-                v = list(d.values())
-                k = list(d.keys())
-                hour_low = int(v[0].split('-')[0])
-                hour_high = int(v[0].split('-')[1])
-                # '*' is any day
-                if k[0] == '*':
-                    all_days = True
-                    day_target = day
-                else:
-                    day_target = int(k[0])
-
-                # Find the correct day
-                if day < day_target: # Days are 0-6
-                    days = day_target - day
-                elif day > day_target: # Day is behind us
-                    days = 7 - (day - day_target)
-                else:
-                    days = 0 # Schedule reboot today
-
-                # Find the correct hour
-                if hour < hour_low: #schedule window is not missed
-                    hours = hour_low - hour
-                elif hour > hour_high: #schedule window is missed
-                    if days == 0 and all_days: #if day is "*" and window missed
-                        hours = (24 - hour) + hour_low
-                        all_days = False
-                    elif days == 0 and (not all_days): #same day window missed
-                        days = 7
-                        hours = (hour_low - hour)
-                    else:
-                        hours = (hour_low - hour)
-                else:
-                    hours = 0 #Schedule reboot now
-
-                run_at = now + datetime.timedelta(hours=hours,days=days)
-                syslog(" day_target: {} , hour_low: {}, hour_high: {}, run at : {}".format(day_target, hour_low, hour_high,run_at))
-                delay = (run_at - now).total_seconds()
-                schedule.append(delay)
-            except Exception as e:
-                syslog("Exception in update schedule: {}".format(e))
-                del schedule[:]
-                break
+        delta_start, delta_end = next_schedule_window(now, update_list)
         '''
         Start the reboot timer.  The snooze command will use this timer
         to snooze the reboot
         '''
-        if not schedule:
-            schedule.append(0.0)
-            syslog("Rebooting now...")
-        else:
-            syslog("list is {}".format(schedule))
-            syslog("Rebooting in: "+str(min(schedule)))
-
-        self.reboot_timer = resumetimer.ResumableTimer(min(schedule), self.reboot)
+        syslog('Rebooting in {} seconds.'.format(delta_start))
+        self.reboot_timer = resumetimer.ResumableTimer(delta_start, self.reboot)
         self.reboot_timer.start()
         self.UpdatePending(UPDATE_SCHEDULED)
 
@@ -461,3 +419,38 @@ class SoftwareUpdate(UpdateService):
         self.usb_local_update = False
         self.process_config()
         self.start_swupdate(False)
+
+    def download_start(self):
+        syslog('Starting suricatta download.')
+        self.swupdate_client.suricatta_enable(True)
+
+    def download_end(self):
+        syslog('Stopping suricatta download.')
+        self.swupdate_client.suricatta_enable(False)
+        # Schedule next window; add 30 seconds to make sure
+        # the current window has ended
+        nowish = datetime.datetime.now() + datetime.timedelta(seconds=30)
+        self.schedule_download_window(nowish)
+
+    def schedule_download_window(self, date_from):
+        # Stop existing timers
+        if self.download_start_timer:
+            self.download_start_timer.cancel()
+            self.download_start_timer = None
+        if self.download_end_timer:
+            self.download_end_timer.cancel()
+            self.download_end_timer = None
+        # Determine the window start and stop based on the current time
+        delta_start, delta_end = next_schedule_window(date_from, self.config.get(DOWNLOAD_SCHEDULE))
+        if delta_end > 0:
+            self.swupdate_client.suricatta_enable(False)
+            syslog('Scheduling download window from {} to {}.'.format(delta_start, delta_end))
+            self.download_start_timer = threading.Timer(delta_start,
+                self.download_start)
+            self.download_start_timer.start()
+            self.download_end_timer = threading.Timer(delta_end,
+                self.download_end)
+            self.download_end_timer.start()
+        else:
+            syslog('Enabling suricatta.')
+            self.swupdate_client.suricatta_enable(True)
