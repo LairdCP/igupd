@@ -1,5 +1,7 @@
 import socket
+import select
 import struct
+import json
 import threading
 import random
 import subprocess
@@ -23,7 +25,18 @@ SWU_STATUS_BAD_CMD=8
 SIGNAL_KILL = -9
 SIGNAL_TERM = -15
 
+SWUPDATE_MAGIC = 0x14052001
+SWUPDATE_MSG_SUBPROCESS = 5
+SWUPDATE_CMD_ENABLE = 2
+SWUPDATE_SRC_SURICATTA = 2
+SURICATTA_CONNECT_ATTEMPTS = 5
+SURICATTA_CONNECT_DELAY = 5
+SURICATTA_RESPONSE_TIMEOUT = 2
+
+SWUPDATE_MSG_STRUCT = 'IiiiiI2048s'
+
 SWU_PROG_ADDRESS = '/tmp/swupdateprog'
+SWU_CTRL_ADDRESS = '/tmp/sockinstctrl'
 
 class SWUpdateClient(threading.Thread):
     def __init__(self,handler,cmd):
@@ -108,3 +121,37 @@ class SWUpdateClient(threading.Thread):
 
     def set_command(self,cmd):
         self.cmd = cmd
+
+    def suricatta_enable(self, enable):
+        json_msg = json.dumps({'enable' : enable})
+        msg = struct.pack(SWUPDATE_MSG_STRUCT,
+            SWUPDATE_MAGIC,
+            SWUPDATE_MSG_SUBPROCESS,
+            SWUPDATE_SRC_SURICATTA,
+            SWUPDATE_CMD_ENABLE,
+            0,
+            len(json_msg),
+            json_msg.encode('utf8'))
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            # Use retries when connecting, as the daemon socket may
+            # not be ready yet
+            connect_try = 0
+            while True:
+                if s.connect_ex(SWU_CTRL_ADDRESS) == 0:
+                    break
+                connect_try = connect_try + 1
+                if connect_try > SURICATTA_CONNECT_ATTEMPTS:
+                    syslog('Suricatta socket connect failed.')
+                    return
+                time.sleep(SURICATTA_CONNECT_DELAY)
+            s.send(msg)
+            rd, wr, ex = select.select([s], [], [], SURICATTA_RESPONSE_TIMEOUT)
+            if s in rd:
+                syslog('Suricatta {}able message successful.'.format('en' if enable else 'dis'))
+            else:
+                syslog('Suricatta socket response timed out.')
+        except socket.error as e:
+            syslog('Suricatta socket error occurred: {}'.format(e))
+        finally:
+            s.close()

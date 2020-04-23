@@ -30,11 +30,13 @@ class UpdateService(dbus.service.Object):
         try:
             update_config = json.loads(config)
         except Exception as e:
-            syslog("Configuration failed, exception = %s" % str(e))
+            syslog("Configuration failed to load JSON, exception = %s" % str(e))
             return -1
 
-        self.process_config(update_config)
-        return 0
+        if self.process_config(update_config):
+            return 0
+        else:
+            return -1
 
     @dbus.service.method("com.lairdtech.security.public.UpdateInterface",
                          in_signature='b', out_signature='i')
