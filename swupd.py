@@ -13,6 +13,7 @@ from usbupd import LocalUpdate
 import pylibconfig
 import traceback
 from schedule import *
+import re
 
 NM_IFACE = 'org.freedesktop.NetworkManager'
 NM_OBJ = '/org/freedesktop/NetworkManager'
@@ -47,6 +48,7 @@ DEVICE_LED_RESET = "reset"
 
 SW_CONF_FILE_PATH = '/etc/secupdate.cfg'
 SW_VERSION_FILE_PATH = '/var/sw-versions'
+LAIRD_RELEASE_FILE_PATH = '/etc/os-release'
 
 kernel_side = {'a': '/dev/ubi0_0', 'b': '/dev/ubi0_3'}
 rootfs_side = {'a': '/dev/ubi0_1', 'b': '/dev/ubi0_4'}
@@ -123,20 +125,24 @@ class SoftwareUpdate(UpdateService):
             return
 
         try:
-            md5sum_val = None
-            with open(SW_VERSION_FILE_PATH, 'w') as f:
-                for key, value in components_dict.items():
-                    if key == "kernel":
-                        md5sum_val = generate_md5sum(value[self.current_boot_side])
-                    elif key == "rootfs":
-                        md5sum_val = generate_md5sum(value[self.current_boot_side])
-                    else:
-                        md5sum_val = generate_md5sum(value)
-
-                    if md5sum_val == -1:
-                        syslog("igupd:gen_sw_version: Failed for %s  %s" % (key, md5sum_val))
-                    syslog("igupd:gen_sw_version: Writing %s  %s" % (key, md5sum_val))
-                    f.write('{}  {}\n'.format(key, md5sum_val))
+            data = None
+            words = []
+            laird_version = None
+            with open(LAIRD_RELEASE_FILE_PATH, 'r') as f2:
+                for line in f2:
+                    if re.search('^VERSION=', line):
+                        words = line.split()
+                        if len(words) > 4:
+                            laird_version = words[4]
+                        else:
+                            laird_version = 0
+                syslog("igupd:gen_sw_version: laird {}".format(laird_version))
+                with open(SW_VERSION_FILE_PATH, 'w') as f1:
+                    for key, value in components_dict.items():
+                        if key == "kernel" or key == 'rootfs':
+                            f1.write('{}  {}\n'.format(key, laird_version))
+                        else:
+                            syslog("igupd:gen_sw_version: key not matched")
         except KeyError:
             syslog("igupd: find boot side")
             return 
