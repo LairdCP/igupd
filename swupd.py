@@ -13,7 +13,6 @@ from usbupd import LocalUpdate
 import pylibconfig
 import traceback
 from schedule import *
-import re
 
 NM_IFACE = 'org.freedesktop.NetworkManager'
 NM_OBJ = '/org/freedesktop/NetworkManager'
@@ -129,10 +128,11 @@ class SoftwareUpdate(UpdateService):
             laird_version = None
             with open(LAIRD_RELEASE_FILE_PATH, 'r') as f2:
                 for line in f2:
-                    if re.search('^VERSION=', line):
-                        words = line.split()
-                        if len(words) > 4:
-                            laird_version = words[4]
+                    if line.startswith('VERSION_ID='):
+                        line = line.rstrip('\n')
+                        words = line.split('=')
+                        if len(words) > 1:
+                            laird_version = words[1]
                         else:
                             laird_version = 0
                 syslog("igupd:gen_sw_version: laird {}".format(laird_version))
