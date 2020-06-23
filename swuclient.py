@@ -29,8 +29,7 @@ SWUPDATE_MAGIC = 0x14052001
 SWUPDATE_MSG_SUBPROCESS = 5
 SWUPDATE_CMD_ENABLE = 2
 SWUPDATE_SRC_SURICATTA = 2
-SURICATTA_CONNECT_ATTEMPTS = 5
-SURICATTA_CONNECT_DELAY = 5
+SURICATTA_CONNECT_DELAY = 60
 SURICATTA_RESPONSE_TIMEOUT = 2
 
 SWUPDATE_MSG_STRUCT = 'IiiiiI2048s'
@@ -43,6 +42,7 @@ class SWUpdateClient(threading.Thread):
         self.recv_handler = handler
         self.proc = None
         self.cmd = cmd
+        self.suricatta_pending_enable = None
         threading.Thread.__init__(self)
 
     def connect_to_prog_sock(self):
@@ -122,8 +122,15 @@ class SWUpdateClient(threading.Thread):
     def set_command(self,cmd):
         self.cmd = cmd
 
-    def suricatta_enable(self, enable):
-        json_msg = json.dumps({'enable' : enable})
+    def send_suricatta_enable(self):
+        # Suricatta is not always started when swupdate begins;
+        # for example, if swupdate is attempting to report status
+        # to HawkBit after an update, it must establish the initial
+        # response before the suricatta socket is available to
+        # enable downloads.  There is no notification via the status
+        # socket (sigh), so we must continually attempt to connect
+        # until it responds.
+        json_msg = json.dumps({'enable' : self.suricatta_pending_enable})
         msg = struct.pack(SWUPDATE_MSG_STRUCT,
             SWUPDATE_MAGIC,
             SWUPDATE_MSG_SUBPROCESS,
@@ -132,26 +139,30 @@ class SWUpdateClient(threading.Thread):
             0,
             len(json_msg),
             json_msg.encode('utf8'))
+        syslog('Attempting to send suricatta {}able message.'.format('en' if self.suricatta_pending_enable else 'dis'))
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            # Use retries when connecting, as the daemon socket may
-            # not be ready yet
-            connect_try = 0
-            while True:
-                if s.connect_ex(SWU_CTRL_ADDRESS) == 0:
-                    break
-                connect_try = connect_try + 1
-                if connect_try > SURICATTA_CONNECT_ATTEMPTS:
-                    syslog('Suricatta socket connect failed.')
-                    return
-                time.sleep(SURICATTA_CONNECT_DELAY)
+            s.connect(SWU_CTRL_ADDRESS)
             s.send(msg)
             rd, wr, ex = select.select([s], [], [], SURICATTA_RESPONSE_TIMEOUT)
             if s in rd:
-                syslog('Suricatta {}able message successful.'.format('en' if enable else 'dis'))
+                syslog('Suricatta {}able message successful.'.format('en' if self.suricatta_pending_enable else 'dis'))
+                self.suricatta_pending_enable = None
+                return
             else:
                 syslog('Suricatta socket response timed out.')
         except socket.error as e:
             syslog('Suricatta socket error occurred: {}'.format(e))
         finally:
             s.close()
+        # Request to suricatta was not successful, try again later.
+        threading.Timer(SURICATTA_CONNECT_DELAY, self.send_suricatta_enable).start()
+
+    def suricatta_enable(self, enable):
+        if self.suricatta_pending_enable is not None:
+            # There is already a pending value to send, just change it
+            self.suricatta_pending_enable = enable
+        else:
+            # Attempt to send enable message to suricatta socket
+            self.suricatta_pending_enable = enable
+            self.send_suricatta_enable()
