@@ -86,7 +86,6 @@ class SoftwareUpdate(UpdateService):
         self.total_snooze_seconds = 0
         self.usb_local_update = False
         self.switch_side = False
-        self.data_migrate_success = True
         self.device_svc = None
         self.updated_component = set()
         self.gen_sw_version()
@@ -388,9 +387,13 @@ class SoftwareUpdate(UpdateService):
         Use the IG's reboot command to initiate the reboot
         '''
 
+        data_migrate_success = True
+
         if self.switch_side:
-            self.data_migrate_success = data_migration()
-            if self.data_migrate_success:
+            if os.path.exists("/usr/sbin/migrate_data.sh"):
+                data_migrate_success = data_migration()
+
+            if data_migrate_success:
                 if self.current_boot_side == 'a':
                     set_env(BOOTSIDE, 'b')
                     set_env(ALTBOOTCMD, 'setenv bootside a; saveenv; run bootcmd')
@@ -398,14 +401,12 @@ class SoftwareUpdate(UpdateService):
                     set_env(BOOTSIDE, 'a')
                     set_env(ALTBOOTCMD, 'setenv bootside b; saveenv; run bootcmd')
 
-
-        if self.data_migrate_success:
+        if data_migrate_success:
             self.UpdatePending(UPDATE_REBOOT)
             set_env(UPGRADE_AVAILABLE, '1')
             set_env(BOOTLIMIT, '5')
             reboot()
         else:
-            self.data_migrate_success = True
             self.switch_side = False
             self.update_state = NO_UPDATE_AVAILABLE
             self.UpdatePending(UPDATE_FAILED)
