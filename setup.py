@@ -2,7 +2,9 @@
 
 from setuptools import setup
 
-setup(name='igupd',
-      version='1.0',
-      py_modules=['__main__','swupd','upsvc','somutil', 'resumetimer', 'swuclient', 'usbupd', 'schedule']
-      )
+setup(
+    name="igupd",
+    version="1.0",
+    packages=["igupd"],
+    scripts=["scripts/igupd"],
+)

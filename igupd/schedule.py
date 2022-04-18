@@ -1,8 +1,6 @@
 #
 # schedule.py - Functions to handle scheduling of downloads and reboots
 #
-import time
-import threading
 import json
 import datetime
 import os
@@ -19,11 +17,11 @@ def check_schedule(schedule_list):
     try:
         for d in schedule_list:
             day = list(d.keys())[0]
-            if day != '*':
+            if day != "*":
                 if int(day) not in range(0, DAYS_PER_WEEK):
                     return False
             hours = list(d.values())[0]
-            hours_list = hours.split('-')
+            hours_list = hours.split("-")
             hour_low = int(hours_list[0])
             if len(hours_list) > 1:
                 hour_high = int(hours_list[1])
@@ -41,20 +39,22 @@ def check_schedule(schedule_list):
         # Any failure to parse is an invalid configuration
         return False
 
+
 #
 # load_schedule() - Load a schedule
 #
 def load_schedule(cfg_path, schedule_name):
-    filepath = '{}/{}.conf'.format(cfg_path, schedule_name)
+    filepath = "{}/{}.conf".format(cfg_path, schedule_name)
     try:
         if os.path.exists(filepath):
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 cfg = json.load(f)
             if check_schedule(cfg.get(schedule_name)):
                 return cfg[schedule_name]
     except Exception as e:
-        syslog('Failed to load schedule from {}: {}'.format(filepath, e))
+        syslog("Failed to load schedule from {}: {}".format(filepath, e))
     return None
+
 
 #
 # save_schedule() - Save a schedule
@@ -62,10 +62,11 @@ def load_schedule(cfg_path, schedule_name):
 def save_schedule(cfg_path, schedule_name, schedule_list):
     if not os.path.exists(cfg_path):
         os.makedirs(cfg_path)
-    filepath = '{}/{}.conf'.format(cfg_path, schedule_name)
-    cfg = { schedule_name : schedule_list }
-    with open(filepath, 'w+') as f:
-        json.dump(cfg, f, sort_keys=True, indent=2, separators=(',', ': '))
+    filepath = "{}/{}.conf".format(cfg_path, schedule_name)
+    cfg = {schedule_name: schedule_list}
+    with open(filepath, "w+") as f:
+        json.dump(cfg, f, sort_keys=True, indent=2, separators=(",", ": "))
+
 
 #
 # next_schedule_window() - Find the start and end of the next
@@ -82,20 +83,24 @@ def next_schedule_window(date_from, schedule_list):
         for d in schedule_list:
             day = list(d.keys())[0]
             hours = list(d.values())[0]
-            hours_list = hours.split('-')
+            hours_list = hours.split("-")
             hour_low = int(hours_list[0])
             if len(hours_list) > 1:
                 hour_high = int(hours_list[1])
             else:
                 hour_high = hour_low
-            if day == '*':
+            if day == "*":
                 # Default hours for all days
                 for i in range(0, DAYS_PER_WEEK):
                     day_offset = i * HOURS_PER_DAY
-                    schedule_hours[day_offset+hour_low:day_offset+hour_high+1] = [1] * (hour_high - hour_low + 1)
+                    schedule_hours[
+                        day_offset + hour_low : day_offset + hour_high + 1
+                    ] = [1] * (hour_high - hour_low + 1)
             else:
                 day_offset = int(day) * HOURS_PER_DAY
-                schedule_hours[day_offset+hour_low:day_offset+hour_high+1] = [1] * (hour_high - hour_low + 1)
+                schedule_hours[day_offset + hour_low : day_offset + hour_high + 1] = [
+                    1
+                ] * (hour_high - hour_low + 1)
 
         delta_start = None
         delta_end = None
@@ -106,16 +111,22 @@ def next_schedule_window(date_from, schedule_list):
 
         # Walk the hours starting from the 'from' hour
         for w in range(0, HOURS_PER_DAY * DAYS_PER_WEEK):
-            is_window = schedule_hours[(w + start_hour) % (HOURS_PER_DAY * DAYS_PER_WEEK)] > 0
+            is_window = (
+                schedule_hours[(w + start_hour) % (HOURS_PER_DAY * DAYS_PER_WEEK)] > 0
+            )
             if delta_start is None:
                 # Look for start
                 if is_window:
-                    date_start = (date_from + datetime.timedelta(hours=w)).replace(minute=0)
+                    date_start = (date_from + datetime.timedelta(hours=w)).replace(
+                        minute=0
+                    )
                     delta_start = (date_start - date_from).total_seconds()
             elif delta_end is None:
                 # Look for end
                 if not is_window:
-                    date_end = (date_from + datetime.timedelta(hours=w)).replace(minute=0)
+                    date_end = (date_from + datetime.timedelta(hours=w)).replace(
+                        minute=0
+                    )
                     delta_end = (date_end - date_from).total_seconds()
         if delta_end is None:
             if delta_start is None or delta_start == 0:
@@ -124,7 +135,7 @@ def next_schedule_window(date_from, schedule_list):
                 delta_end = 0
             else:
                 # The window ends at the last interval
-                delta_end = (HOURS_PER_DAY * DAYS_PER_WEEK)
+                delta_end = HOURS_PER_DAY * DAYS_PER_WEEK
         return (delta_start, delta_end)
     except Exception:
         # Invalid input config, return 'always on'

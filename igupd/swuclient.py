@@ -3,14 +3,10 @@ import select
 import struct
 import json
 import threading
-import random
 import subprocess
 import time
 import os
-from syslog import syslog, openlog
-
-import sys
-PYTHON3 = sys.version_info >= (3, 0)
+from syslog import syslog
 
 SWU_STATUS_IDLE=0
 SWU_STATUS_START=1
@@ -67,10 +63,7 @@ class SWUpdateClient(threading.Thread):
                 if not data:
                     break
                 fields = struct.unpack('=IiIIII256s64siI2048s', data)
-                if PYTHON3:
-                    self.progress_handler(fields[1], str(fields[6],"utf-8"), str(fields[10],"utf-8"))
-                else:
-                    self.progress_handler(fields[1], fields[6], fields[10])
+                self.progress_handler(fields[1], str(fields[6],"utf-8"), str(fields[10],"utf-8"))
             except socket.error as exc:
                 syslog("Caught exception socket.error: %s" % exc)
             except Exception as e:
@@ -100,7 +93,7 @@ class SWUpdateClient(threading.Thread):
             self.proc.kill()
 
     def restart_swupdate(self):
-        if self.proc.poll() is None:
+        if self.proc and self.proc.poll() is None:
             self.proc.terminate()
 
     def run(self):
@@ -148,13 +141,14 @@ class SWUpdateClient(threading.Thread):
             if s in rd:
                 syslog('Suricatta {}able message successful.'.format('en' if self.suricatta_pending_enable else 'dis'))
                 self.suricatta_pending_enable = None
+                s.close()
                 return
             else:
+                s.close()
                 syslog('Suricatta socket response timed out.')
         except socket.error as e:
             syslog('Suricatta socket error occurred: {}'.format(e))
-        finally:
-            s.close()
+
         # Request to suricatta was not successful, try again later.
         threading.Timer(SURICATTA_CONNECT_DELAY, self.send_suricatta_enable).start()
 

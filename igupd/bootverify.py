@@ -2,24 +2,25 @@ import dbus
 import dbus.exceptions
 import dbus.mainloop.glib
 import dbus.service
-from syslog import syslog, openlog
+from syslog import syslog
 
-IG_PROV_IFACE = 'com.lairdtech.IG.ProvService'
-IG_PROV_OBJ = '/com/lairdtech/IG/ProvService'
+IG_PROV_IFACE = "com.lairdtech.IG.ProvService"
+IG_PROV_OBJ = "/com/lairdtech/IG/ProvService"
 
-NM_IFACE =            'org.freedesktop.NetworkManager'
-NM_SETTINGS_IFACE =   'org.freedesktop.NetworkManager.Settings'
-NM_SETTINGS_OBJ =     '/org/freedesktop/NetworkManager/Settings'
-NM_OBJ =              '/org/freedesktop/NetworkManager'
-NM_CONNECTION_IFACE = 'org.freedesktop.NetworkManager.Settings.Connection'
-NM_DEVICE_IFACE =     'org.freedesktop.NetworkManager.Device'
-DBUS_PROP_IFACE =     'org.freedesktop.DBus.Properties'
+NM_IFACE = "org.freedesktop.NetworkManager"
+NM_SETTINGS_IFACE = "org.freedesktop.NetworkManager.Settings"
+NM_SETTINGS_OBJ = "/org/freedesktop/NetworkManager/Settings"
+NM_OBJ = "/org/freedesktop/NetworkManager"
+NM_CONNECTION_IFACE = "org.freedesktop.NetworkManager.Settings.Connection"
+NM_DEVICE_IFACE = "org.freedesktop.NetworkManager.Device"
+DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
 
-'''
+"""
 Checks for a successful boot by verifying the services are running
 correctly and the wifi interface is up.  Watchdog is handled in by
 lower level parts of the system.
-'''
+"""
+
 
 def check_ig_services():
     try:
@@ -29,6 +30,7 @@ def check_ig_services():
     except dbus.exceptions.DBusException as e:
         syslog("Failed to initialize D-Bus object: '%s'" % str(e))
         return False
+
 
 def check_wifi_interface():
     bus = dbus.SystemBus()

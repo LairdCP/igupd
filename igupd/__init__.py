@@ -1,30 +1,25 @@
 import dbus, dbus.service, dbus.exceptions
-import signal
 from syslog import syslog, openlog
 from dbus.mainloop.glib import DBusGMainLoop
-import swupd
-import random
 import traceback
 
-import sys
-PYTHON3 = sys.version_info >= (3, 0)
-if PYTHON3:
-    from gi.repository import GObject as gobject
-    from gi.repository import GLib as glib
-else:
-    import gobject
+from . import swupd
+
+from gi.repository import GObject as gobject
+from gi.repository import GLib as glib
 
 # Global loop object
 loop = None
 
 def main():
+    openlog("IG.UpdateService")
+    syslog("Starting main loop.")
+
     # Initialize a main loop
     DBusGMainLoop(set_as_default=True)
     gobject.threads_init()
-    if PYTHON3:
-        loop = glib.MainLoop()
-    else:
-        loop = gobject.MainLoop()
+
+    loop = glib.MainLoop()
 
     # Declare a name where our service can be reached
     try:
@@ -48,11 +43,3 @@ def main():
         syslog("Unexpected exception occurred: '{}'".format(traceback.format_exc()))
     finally:
         loop.quit()
-    return 0
-
-#
-# Run the main loop
-#
-openlog("IG.UpdateService")
-syslog("Starting main loop.")
-main()
