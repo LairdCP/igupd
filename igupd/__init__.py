@@ -11,6 +11,7 @@ from gi.repository import GLib as glib
 # Global loop object
 loop = None
 
+
 def main():
     openlog("IG.UpdateService")
     syslog("Starting main loop.")
@@ -23,14 +24,16 @@ def main():
 
     # Declare a name where our service can be reached
     try:
-        bus_name = dbus.service.BusName("com.lairdtech.security.UpdateService",
-                                        bus=dbus.SystemBus(),
-                                        do_not_queue=True)
+        bus_name = dbus.service.BusName(
+            "com.lairdtech.security.UpdateService",
+            bus=dbus.SystemBus(),
+            do_not_queue=True,
+        )
     except dbus.exceptions.NameExistsException:
         syslog("service is already running")
         return 1
 
-    syslog('Starting software update service')
+    syslog("Starting software update service")
 
     # Run the loop
     try:

@@ -248,7 +248,7 @@ class SoftwareUpdate(UpdateService):
         if config is None:
             try:
                 c = {}
-                with open(SW_CONF_FILE_PATH, 'r') as f:
+                with open(SW_CONF_FILE_PATH, "r") as f:
                     c = libconf.load(f)
                 if ID_CFG_KEY in c:
                     self.device_name_prefix, is_valid = c[ID_CFG_KEY]

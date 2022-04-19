@@ -8,15 +8,15 @@ import time
 import os
 from syslog import syslog
 
-SWU_STATUS_IDLE=0
-SWU_STATUS_START=1
-SWU_STATUS_RUN=2
-SWU_STATUS_SUCCESS=3
-SWU_STATUS_FAILURE=4
-SWU_STATUS_DOWNLOAD=5
-SWU_STATUS_DONE=6
-SWU_STATUS_SUBPROCESS=7
-SWU_STATUS_BAD_CMD=8
+SWU_STATUS_IDLE = 0
+SWU_STATUS_START = 1
+SWU_STATUS_RUN = 2
+SWU_STATUS_SUCCESS = 3
+SWU_STATUS_FAILURE = 4
+SWU_STATUS_DOWNLOAD = 5
+SWU_STATUS_DONE = 6
+SWU_STATUS_SUBPROCESS = 7
+SWU_STATUS_BAD_CMD = 8
 
 SIGNAL_KILL = -9
 SIGNAL_TERM = -15
@@ -28,13 +28,14 @@ SWUPDATE_SRC_SURICATTA = 2
 SURICATTA_CONNECT_DELAY = 60
 SURICATTA_RESPONSE_TIMEOUT = 2
 
-SWUPDATE_MSG_STRUCT = 'IiiiiI2048s'
+SWUPDATE_MSG_STRUCT = "IiiiiI2048s"
 
-SWU_PROG_ADDRESS = '/tmp/swupdateprog'
-SWU_CTRL_ADDRESS = '/tmp/sockinstctrl'
+SWU_PROG_ADDRESS = "/tmp/swupdateprog"
+SWU_CTRL_ADDRESS = "/tmp/sockinstctrl"
+
 
 class SWUpdateClient(threading.Thread):
-    def __init__(self,handler,cmd):
+    def __init__(self, handler, cmd):
         self.recv_handler = handler
         self.proc = None
         self.cmd = cmd
@@ -62,15 +63,16 @@ class SWUpdateClient(threading.Thread):
                 data = self.sock.recv(2400)
                 if not data:
                     break
-                fields = struct.unpack('=IiIIII256s64siI2048s', data)
-                self.progress_handler(fields[1], str(fields[6],"utf-8"), str(fields[10],"utf-8"))
+                fields = struct.unpack("=IiIIII256s64siI2048s", data)
+                self.progress_handler(
+                    fields[1], str(fields[6], "utf-8"), str(fields[10], "utf-8")
+                )
             except socket.error as exc:
                 syslog("Caught exception socket.error: %s" % exc)
             except Exception as e:
                 syslog("Failed to do progress updates: '%s'" % str(e))
 
         self.sock.close()
-
 
     def start_swupdate(self):
         self.proc = subprocess.Popen(self.cmd, shell=False)
@@ -82,9 +84,13 @@ class SWUpdateClient(threading.Thread):
 
         if self.proc.returncode != 0:
             if self.proc.returncode == SIGNAL_TERM:
-                syslog("Subprocess was terminated by SIGTERM %d" % (self.proc.returncode))
+                syslog(
+                    "Subprocess was terminated by SIGTERM %d" % (self.proc.returncode)
+                )
             elif self.proc.returncode == SIGNAL_KILL:
-                syslog("Subprocess was terminated by SIGKILL %d" % (self.proc.returncode))
+                syslog(
+                    "Subprocess was terminated by SIGKILL %d" % (self.proc.returncode)
+                )
             else:
                 syslog("command failed stopping, exit-code=%d" % (self.proc.returncode))
                 self.progress_handler(SWU_STATUS_BAD_CMD, None, self.proc.returncode)
@@ -104,7 +110,7 @@ class SWUpdateClient(threading.Thread):
     def progress_handler(self, status, curr_image, msg):
         self.state = status
         if curr_image:
-            rcurr_img = curr_image.strip('\x00')
+            rcurr_img = curr_image.strip("\x00")
         else:
             rcurr_img = None
         self.recv_handler(status, rcurr_img, msg)
@@ -112,7 +118,7 @@ class SWUpdateClient(threading.Thread):
     def get_state(self):
         return self.state
 
-    def set_command(self,cmd):
+    def set_command(self, cmd):
         self.cmd = cmd
 
     def send_suricatta_enable(self):
@@ -123,31 +129,41 @@ class SWUpdateClient(threading.Thread):
         # enable downloads.  There is no notification via the status
         # socket (sigh), so we must continually attempt to connect
         # until it responds.
-        json_msg = json.dumps({'enable' : self.suricatta_pending_enable})
-        msg = struct.pack(SWUPDATE_MSG_STRUCT,
+        json_msg = json.dumps({"enable": self.suricatta_pending_enable})
+        msg = struct.pack(
+            SWUPDATE_MSG_STRUCT,
             SWUPDATE_MAGIC,
             SWUPDATE_MSG_SUBPROCESS,
             SWUPDATE_SRC_SURICATTA,
             SWUPDATE_CMD_ENABLE,
             0,
             len(json_msg),
-            json_msg.encode('utf8'))
-        syslog('Attempting to send suricatta {}able message.'.format('en' if self.suricatta_pending_enable else 'dis'))
+            json_msg.encode("utf8"),
+        )
+        syslog(
+            "Attempting to send suricatta {}able message.".format(
+                "en" if self.suricatta_pending_enable else "dis"
+            )
+        )
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             s.connect(SWU_CTRL_ADDRESS)
             s.send(msg)
             rd, wr, ex = select.select([s], [], [], SURICATTA_RESPONSE_TIMEOUT)
             if s in rd:
-                syslog('Suricatta {}able message successful.'.format('en' if self.suricatta_pending_enable else 'dis'))
+                syslog(
+                    "Suricatta {}able message successful.".format(
+                        "en" if self.suricatta_pending_enable else "dis"
+                    )
+                )
                 self.suricatta_pending_enable = None
                 s.close()
                 return
             else:
                 s.close()
-                syslog('Suricatta socket response timed out.')
+                syslog("Suricatta socket response timed out.")
         except socket.error as e:
-            syslog('Suricatta socket error occurred: {}'.format(e))
+            syslog("Suricatta socket error occurred: {}".format(e))
 
         # Request to suricatta was not successful, try again later.
         threading.Timer(SURICATTA_CONNECT_DELAY, self.send_suricatta_enable).start()
