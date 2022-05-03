@@ -35,11 +35,15 @@ BOOTLIMIT = "bootlimit"
 UPDATE_SCHEDULE = "update_schedule"
 DOWNLOAD_SCHEDULE = "download_schedule"
 
-ID_CFG_KEY = "secupdate.id"
-WRITE_CFG_KEY = "secupdate.write_cfg_path"
-UPDATE_SCHEDULE_CFG_KEY = "secupdate.update_schedule"
-DAY_CFG_KEY = ".day"
-HOURS_CFG_KEY = ".hours"
+GLOBALS_CFG_KEY = "globals"
+UPDATE_CFG_KEY = "secupdate"
+SURICATTA_CFG_KEY = "suricatta"
+ID_CFG_KEY = "id"
+SSL_CFG_KEY = "sslkey"
+PUBLIC_KEY_CFG_ID = "public-key-file"
+WRITE_CFG_KEY = "write_cfg_path"
+DAY_CFG_KEY = "day"
+HOURS_CFG_KEY = "hours"
 
 SWUPDATE = "swupdate"
 IMAGE = "image"
@@ -250,30 +254,30 @@ class SoftwareUpdate(UpdateService):
                 c = {}
                 with open(SW_CONF_FILE_PATH, "r") as f:
                     c = libconf.load(f)
-                if ID_CFG_KEY in c:
-                    self.device_name_prefix, is_valid = c[ID_CFG_KEY]
+                if GLOBALS_CFG_KEY in c:
+                    g = c[GLOBALS_CFG_KEY]
+                    if ID_CFG_KEY in g:
+                        self.device_name_prefix = g[ID_CFG_KEY]
+                    if PUBLIC_KEY_CFG_ID in g:
+                        self.public_key_file = g[PUBLIC_KEY_CFG_ID]
                 self.device_name = self.device_name_prefix + self.mac_addr
                 syslog("Secure update device ID: " + self.device_name)
-                if WRITE_CFG_KEY in c:
-                    self.write_cfg_path, is_valid = c[WRITE_CFG_KEY]
+                if SURICATTA_CFG_KEY in c:
+                    if SSL_CFG_KEY in c[SURICATTA_CFG_KEY]:
+                        self.sslkey = c[SURICATTA_CFG_KEY][SSL_CFG_KEY]
+                u = c.get(UPDATE_CFG_KEY, {})
+                if WRITE_CFG_KEY in u:
+                    self.write_cfg_path = u[WRITE_CFG_KEY]
                 syslog("Secure update config write path: " + self.write_cfg_path)
-                if "globals.public-key-file" in c:
-                    self.public_key_file, is_valid = c["globals.public-key-file"]
-                if "suricatta.sslkey" in c:
-                    self.sslkey, is_valid = c["suricatta.sslkey"]
                 # Convert update_schedule from cfg format to dict
                 update_schedule = []
-                i = 0
-                key = UPDATE_SCHEDULE_CFG_KEY + ".[{}]".format(i)
-                while c.exists(key):
-                    day_str, day_valid = c.value(key + DAY_CFG_KEY)
-                    hours_str, hours_valid = c.value(key + HOURS_CFG_KEY)
-                    if day_valid and hours_valid:
-                        update_schedule.append({day_str: hours_str})
-                        i = i + 1
-                        key = UPDATE_SCHEDULE_CFG_KEY + ".[{}]".format(i)
-                    else:
-                        break
+                if UPDATE_SCHEDULE in u:
+                    sched = u[UPDATE_SCHEDULE]
+                    for e in sched:
+                        if DAY_CFG_KEY in e and HOURS_CFG_KEY in e:
+                            day_str = e[DAY_CFG_KEY]
+                            hours_str = e[HOURS_CFG_KEY]
+                            update_schedule.append({day_str: hours_str})
                 if check_schedule(update_schedule):
                     self.config[UPDATE_SCHEDULE] = update_schedule
 
@@ -365,10 +369,7 @@ class SoftwareUpdate(UpdateService):
                 "-e",
                 select,
                 "-u",
-                "-i",
-                self.device_name,
-                "-c",
-                result,
+                f"-i {self.devicename} -c {result}",
             ]
             syslog("CONFIG: REPLYING TO HAWKBIT")
         elif IMAGE in self.config:
@@ -392,8 +393,7 @@ class SoftwareUpdate(UpdateService):
                 "-e",
                 select,
                 "-u",
-                "-i",
-                self.device_name,
+                f"-i {self.device_name}",
             ]
 
         # If we've already started the swupdate thread, pass in the new command and
