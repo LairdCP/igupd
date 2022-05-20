@@ -14,7 +14,7 @@ DEVICE = "sda"
 DEVICE_PART1 = "/dev/sda1"
 UPDATE_PACKAGE_NAME = "swupdate.swu"
 RETRY_COUNT = 8
-TIMEOUT = 2000
+TIMEOUT = 3000
 
 local_update_config = {
     "blacklist": "0 1 2 3",
@@ -43,28 +43,40 @@ class LocalUpdate:
         Function looks for mount point and sends the swupdate config to Softwareupdate service
         """
         try:
+            syslog(f"check_mount_point: retry_count={self.retry_count}")
             if self.retry_count == RETRY_COUNT:
                 self.retry_count = 0
+                self.job_id = None
                 return False
 
             for partition in disk_partitions(all=False):
                 if DEVICE_PART1 in partition.device:
-                    update_path = os.path.join(
-                        partition.mountpoint, UPDATE_PACKAGE_NAME
-                    )
-                    if os.path.isfile(update_path):
-                        local_update_config["image"] = update_path
-                        syslog("usbupd: check_mount_point: Starting config parsing...")
-                        ret = self.process_config(local_update_config)
-                        if ret:
+                    if partition.mountpoint:
+                        update_path = os.path.join(
+                            partition.mountpoint, UPDATE_PACKAGE_NAME
+                        )
+                        syslog(f"Checking for update on {update_path}")
+                        if os.path.isfile(update_path):
+                            local_update_config["image"] = update_path
                             syslog(
-                                "usbupd: check_mount_point: Starting Software Update..."
+                                "usbupd: check_mount_point: Starting config parsing..."
                             )
-                            gobject.source_remove(self.job_id)
-                            self.start_swupdate(False)
-                            self.retry_count = 0
-                    self.job_id = None
-                    return False
+                            ret = self.process_config(local_update_config)
+                            if ret:
+                                syslog(
+                                    "usbupd: check_mount_point: Starting Software Update..."
+                                )
+                                gobject.source_remove(self.job_id)
+                                self.start_swupdate(False)
+                                self.retry_count = 0
+                            else:
+                                syslog("Update config invalid.")
+                        else:
+                            syslog("Could not find update file.")
+                        self.job_id = None
+                        return False
+                    else:
+                        syslog("Partition not mounted yet, retrying.")
 
             self.retry_count += 1
             return True
@@ -82,12 +94,12 @@ class LocalUpdate:
         try:
 
             if device.action == "add":
-                syslog("usbupd: device_event: USB inserted")
+                syslog("usbupd: device_event: block device added")
                 if self.job_id is None:
                     self.job_id = gobject.timeout_add(TIMEOUT, self.check_mount_point)
 
             if device.action == "remove":
-                syslog("usbupd: device_event: USB removed")
+                syslog("usbupd: device_event: block device removed")
                 # reset device leds
                 if self.device_svc:
                     self.device_svc.DeviceUpdateReset()
@@ -118,7 +130,7 @@ class LocalUpdate:
             #    self.check_mount_point()
             context = Context()
             monitor = Monitor.from_netlink(context)
-            monitor.filter_by(subsystem="usb")
+            monitor.filter_by(subsystem="block")
             observer = MonitorObserver(monitor)
             observer.connect("device-event", self.device_event)
             monitor.start()
