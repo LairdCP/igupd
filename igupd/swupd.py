@@ -3,7 +3,6 @@ import datetime
 import dbus
 import dbus.service
 import dbus.exceptions
-import threading
 from syslog import syslog
 import libconf
 import traceback
@@ -33,24 +32,22 @@ BOOTCOUNT = "bootcount"
 BOOTLIMIT = "bootlimit"
 
 UPDATE_SCHEDULE = "update_schedule"
-DOWNLOAD_SCHEDULE = "download_schedule"
 
 GLOBALS_CFG_KEY = "globals"
 UPDATE_CFG_KEY = "secupdate"
-SURICATTA_CFG_KEY = "suricatta"
 ID_CFG_KEY = "id"
-SSL_CFG_KEY = "sslkey"
 PUBLIC_KEY_CFG_ID = "public-key-file"
 WRITE_CFG_KEY = "write_cfg_path"
 DAY_CFG_KEY = "day"
 HOURS_CFG_KEY = "hours"
 
 SWUPDATE = "swupdate"
+SWUPDATE_CLIENT = "swupdate-client"
 IMAGE = "image"
 DEVICE_LED_FAILED = "failed"
 DEVICE_LED_RESET = "reset"
 
-SW_CONF_FILE_PATH = "/etc/secupdate.cfg"
+SW_CONF_FILE_PATH = "/etc/swupdate.cfg"
 SW_VERSION_FILE_PATH = "/var/sw-versions"
 LAIRD_RELEASE_FILE_PATH = "/etc/os-release"
 
@@ -96,21 +93,19 @@ class SoftwareUpdate(UpdateService):
         self.get_wlan_hw_address()
         self.conn_device_service()
         self.local_update = LocalUpdate(
-            self.process_config, self.start_swupdate, self.device_svc
+            self.process_config, self.initiate_swupdate, self.device_svc
         )
         self.update_state = UPDATE_READY
         self.device_name_prefix = "Laird_"
         self.write_cfg_path = "/data/public/igupd/update_schedule.conf"
         self.public_key_file = None
         self.sslkey = None
-        self.download_start_timer = None
-        self.download_end_timer = None
         self.process_config()
 
         if get_uboot_env_value(UPGRADE_AVAILABLE) == "1":
-            self.verify_startup()
-        else:
-            self.start_swupdate(False)
+            set_env(UPGRADE_AVAILABLE, "0")
+            set_env(BOOTCOUNT, "0")
+        self.swupdate_client = swuclient.SWUpdateClient(self.swupdate_handler)
 
     def get_wlan_hw_address(self):
         bus = dbus.SystemBus()
@@ -163,20 +158,6 @@ class SoftwareUpdate(UpdateService):
         except dbus.exceptions.DBusException as e:
             syslog("swupd: conn_device_service: %s" % e)
 
-    def verify_startup(self):
-        """
-        Determine whether or not the startup was successful, if this was
-        a fallback, and update Hawkbit accordingly.
-        """
-        if int(get_uboot_env_value(BOOTCOUNT)) > 5:
-            self.start_swupdate(True, SWUPDATE_FAILED)
-        else:
-            self.start_swupdate(True, SWUPDATE_SUCCESS)
-
-        set_env(UPGRADE_AVAILABLE, "0")
-        set_env(BOOTCOUNT, "0")
-        return True
-
     def update_available(self):
         """
         Reset the update_available uboot var to '1'.  Set the 'bootcmd' and
@@ -221,16 +202,12 @@ class SoftwareUpdate(UpdateService):
                 self.updated_component.clear()
                 if self.usb_local_update is True:
                     self.local_update_state_change(DEVICE_LED_RESET)
-                else:
-                    self.start_swupdate(True, SWUPDATE_SUCCESS)
 
         elif status == swuclient.SWU_STATUS_FAILURE:
             self.update_state = NO_UPDATE_AVAILABLE
             self.updated_component.clear()
             if self.usb_local_update is True:
                 self.local_update_state_change(DEVICE_LED_FAILED)
-            else:
-                self.start_swupdate()
 
         elif status == swuclient.SWU_STATUS_BAD_CMD:
             self.updated_component.clear()
@@ -262,9 +239,6 @@ class SoftwareUpdate(UpdateService):
                         self.public_key_file = g[PUBLIC_KEY_CFG_ID]
                 self.device_name = self.device_name_prefix + self.mac_addr
                 syslog("Secure update device ID: " + self.device_name)
-                if SURICATTA_CFG_KEY in c:
-                    if SSL_CFG_KEY in c[SURICATTA_CFG_KEY]:
-                        self.sslkey = c[SURICATTA_CFG_KEY][SSL_CFG_KEY]
                 u = c.get(UPDATE_CFG_KEY, {})
                 if WRITE_CFG_KEY in u:
                     self.write_cfg_path = u[WRITE_CFG_KEY]
@@ -286,17 +260,6 @@ class SoftwareUpdate(UpdateService):
                 if update_schedule:
                     self.config[UPDATE_SCHEDULE] = update_schedule
                     syslog("Update schedule: {}".format(self.config[UPDATE_SCHEDULE]))
-
-                # Load download_schedule from config file
-                download_schedule = load_schedule(
-                    self.write_cfg_path, DOWNLOAD_SCHEDULE
-                )
-                if download_schedule:
-                    self.config[DOWNLOAD_SCHEDULE] = download_schedule
-                    syslog(
-                        "Download schedule: {}".format(self.config[DOWNLOAD_SCHEDULE])
-                    )
-
             except (RuntimeError, IOError):
                 syslog(
                     "Failed to parse secure update configuration file: {}".format(
@@ -325,31 +288,13 @@ class SoftwareUpdate(UpdateService):
                             )
                         )
                         ret = True
-                    if check_schedule(config.get(DOWNLOAD_SCHEDULE)):
-                        self.config[DOWNLOAD_SCHEDULE] = config[DOWNLOAD_SCHEDULE]
-                        save_schedule(
-                            self.write_cfg_path,
-                            DOWNLOAD_SCHEDULE,
-                            self.config[DOWNLOAD_SCHEDULE],
-                        )
-                        syslog(
-                            "igupd: process_config: download schedule modified successfully: {}".format(
-                                self.config[DOWNLOAD_SCHEDULE]
-                            )
-                        )
-                        # Restart download window
-                        now = datetime.datetime.now()
-                        self.schedule_download_window(now)
-                        ret = True
                     return ret
                 except (TypeError, AttributeError, ValueError):
                     return False
         return True
 
-    def start_swupdate(self, reply=False, result="1"):
-        """
-        Determine the correct boot side for swupdate to copy a new update to and start Swupdate.
-        """
+    def initiate_swupdate(self, local_update=False):
+        syslog("Initiating update")
 
         # Check the current boot side so we can make the appropriate switch later
         if self.current_boot_side == "a":
@@ -358,56 +303,14 @@ class SoftwareUpdate(UpdateService):
         else:
             syslog("Current boot_side is b")
             select = "stable,main-a"
-
-        # Check we are using swupdate's suricatta mode or updating locally on the device.
-        # If local, don't save the config
-        if reply:
-            cmd = [
-                SWUPDATE,
-                "-f",
-                SW_CONF_FILE_PATH,
-                "-e",
-                select,
-                "-u",
-                f"-i {self.devicename} -c {result}",
-            ]
-            syslog("CONFIG: REPLYING TO HAWKBIT")
-        elif IMAGE in self.config:
-            syslog("CONFIG: LOCAL IMAGE")
-            self.usb_local_update = True
-            cmd = [
-                SWUPDATE,
-                "-f",
-                SW_CONF_FILE_PATH,
-                "-e",
-                select,
-                "-i",
-                self.config[IMAGE],
-            ]
-        else:
-            syslog("CONFIG: SURICATTA MODE")
-            cmd = [
-                SWUPDATE,
-                "-f",
-                SW_CONF_FILE_PATH,
-                "-e",
-                select,
-                "-u",
-                f"-i {self.device_name}",
-            ]
-
-        # If we've already started the swupdate thread, pass in the new command and
-        # and restart swupdate.
-        if self.swupdate_client == None:
-            self.swupdate_client = swuclient.SWUpdateClient(self.swupdate_handler, cmd)
-            self.swupdate_client.start()
-        else:
-            self.swupdate_client.set_command(cmd)
-            self.swupdate_client.restart_swupdate()
-        if not self.usb_local_update:
-            now = datetime.datetime.now()
-            self.schedule_download_window(now)
-        return True
+        self.usb_local_update = local_update
+        cmd = [
+            SWUPDATE_CLIENT,
+            "-e",
+            select,
+            self.config[IMAGE],
+        ]
+        self.swupdate_client.initiate_swupdate(cmd)
 
     def schedule_reboot(self, update_list):
         """
@@ -470,8 +373,6 @@ class SoftwareUpdate(UpdateService):
             self.reboot_timer = None
             if self.usb_local_update is True:
                 self.local_update_state_change(DEVICE_LED_FAILED)
-            else:
-                self.start_swupdate(True, SWUPDATE_FAILED)
 
     def local_update_state_change(self, handler):
         if handler == DEVICE_LED_RESET and self.device_svc:
@@ -480,48 +381,3 @@ class SoftwareUpdate(UpdateService):
             self.device_svc.DeviceUpdateFailed()
         self.usb_local_update = False
         self.process_config()
-        self.start_swupdate(False)
-
-    def download_start(self):
-        syslog("Starting suricatta download.")
-        if self.swupdate_client:
-            self.swupdate_client.suricatta_enable(True)
-
-    def download_end(self):
-        syslog("Stopping suricatta download.")
-        if self.swupdate_client:
-            self.swupdate_client.suricatta_enable(False)
-            # Schedule next window; add 30 seconds to make sure
-            # the current window has ended
-            nowish = datetime.datetime.now() + datetime.timedelta(seconds=30)
-            self.schedule_download_window(nowish)
-
-    def schedule_download_window(self, date_from):
-        # Stop existing timers
-        if self.download_start_timer:
-            self.download_start_timer.cancel()
-            self.download_start_timer = None
-        if self.download_end_timer:
-            self.download_end_timer.cancel()
-            self.download_end_timer = None
-        # Determine the window start and stop based on the current time
-        delta_start, delta_end = next_schedule_window(
-            date_from, self.config.get(DOWNLOAD_SCHEDULE)
-        )
-        if self.swupdate_client:
-            if delta_end > 0:
-                self.swupdate_client.suricatta_enable(False)
-                syslog(
-                    "Scheduling download window from {} to {}.".format(
-                        delta_start, delta_end
-                    )
-                )
-                self.download_start_timer = threading.Timer(
-                    delta_start, self.download_start
-                )
-                self.download_start_timer.start()
-                self.download_end_timer = threading.Timer(delta_end, self.download_end)
-                self.download_end_timer.start()
-            else:
-                syslog("Enabling suricatta.")
-                self.swupdate_client.suricatta_enable(True)

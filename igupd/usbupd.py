@@ -32,7 +32,7 @@ class LocalUpdate:
     def __init__(self, callback1, callback2, device_svc):
         self.device_svc = device_svc
         self.process_config = callback1
-        self.start_swupdate = callback2
+        self.initiate_swupdate = callback2
         self.retry_count = 0
         self.job_id = None
         self.start_usb_detection()
@@ -67,7 +67,7 @@ class LocalUpdate:
                                     "usbupd: check_mount_point: Starting Software Update..."
                                 )
                                 gobject.source_remove(self.job_id)
-                                self.start_swupdate(False)
+                                self.initiate_swupdate(local_update=True)
                                 self.retry_count = 0
                             else:
                                 syslog("Update config invalid.")
